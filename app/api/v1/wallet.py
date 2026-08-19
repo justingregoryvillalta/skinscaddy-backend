@@ -15,6 +15,7 @@ from app.schemas.wallet import (
     WalletMutationResponse,
     WalletResponse,
 )
+from app.services.users import ensure_welcome_bonus
 from app.services.wallet import (
     InsufficientTokensError,
     InvalidTokenAmountError,
@@ -48,6 +49,7 @@ def read_wallet(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> WalletResponse:
+    ensure_welcome_bonus(db, current_user)
     return WalletResponse(**_wallet_body(db, current_user))
 
 

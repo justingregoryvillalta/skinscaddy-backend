@@ -69,6 +69,15 @@ def test_login_wrong_password(client: TestClient) -> None:
     assert "invalid" in response.json()["detail"].lower()
 
 
+def test_health_reports_welcome_and_admin(client: TestClient) -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["welcome_bonus"] == 100
+    assert body["admin"] is True
+
+
 def test_protected_requires_token(client: TestClient) -> None:
     response = client.get("/api/v1/protected")
     assert response.status_code == 401

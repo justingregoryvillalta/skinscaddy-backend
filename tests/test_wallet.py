@@ -60,6 +60,7 @@ def test_wallet_routes_require_auth(client: TestClient) -> None:
 
 def test_new_account_starts_with_welcome_bonus(client: TestClient) -> None:
     user = register(client)
+    assert user["user"]["token_balance"] == 100
     wallet = client.get("/api/v1/wallet", headers=auth(user["access_token"]))
     assert wallet.status_code == 200
     assert wallet.json() == {"balance": 100, "earned": 100, "spent": 0}

@@ -29,8 +29,8 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     application = FastAPI(
         title=settings.APP_NAME,
-        version="0.1.0",
-        description="SkinsCaddy backend — accounts, friends, wallet, challenges, feed, photos, and scramble.",
+        version="0.1.2",
+        description="SkinsCaddy backend — accounts, friends, wallet, challenges, feed, photos, scramble, and admin.",
         lifespan=lifespan,
     )
     origins = settings.cors_origin_list
@@ -55,4 +55,7 @@ def health() -> dict:
         "service": "skinscaddy",
         "env": settings.ENV,
         "database": "sqlite" if settings.uses_sqlite else "postgresql",
+        "welcome_bonus": 100,
+        "admin": True,
+        "version": "0.1.2",
     }

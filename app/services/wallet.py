@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, text
 from sqlalchemy.orm import Session
 
 from app.models.user import User
@@ -140,7 +140,11 @@ def _apply(
         verb = "credit" if direction == TokenDirection.CREDIT else "debit"
         raise InvalidTokenSourceError(f"Source '{source.value}' cannot be used to {verb} tokens.")
 
-    locked = db.scalar(select(User).where(User.id == user.id).with_for_update())
+    # Avoid SELECT ... FOR UPDATE. It is a no-op or error on some SQLite
+    # builds and can fail when the same session already holds the admin row.
+    locked = db.get(User, user.id)
+    if locked is None:
+        locked = db.scalar(select(User).where(User.id == user.id))
     if locked is None:
         raise WalletError("User not found.")
 
@@ -238,3 +242,73 @@ def award_tokens(
         reference=reference,
         commit=commit,
     )
+
+
+def set_token_balance(
+    db: Session,
+    user_id: int,
+    balance: int,
+    *,
+    reason: str = "Admin adjustment",
+    reference: str | None = None,
+) -> dict:
+    """Set any user's token_balance, including justinv. Raw UPDATE + ledger."""
+    if balance < 0:
+        raise InvalidTokenAmountError("Balance cannot be negative.")
+
+    row = db.execute(
+        text(
+            "SELECT id, username, token_balance FROM users WHERE id = :uid"
+        ),
+        {"uid": int(user_id)},
+    ).mappings().first()
+    if row is None:
+        raise WalletError("User not found.")
+
+    current = int(row["token_balance"] or 0)
+    target = int(balance)
+    delta = target - current
+    if delta != 0:
+        db.execute(
+            text("UPDATE users SET token_balance = :balance WHERE id = :uid"),
+            {"balance": target, "uid": int(user_id)},
+        )
+        direction = TokenDirection.CREDIT if delta > 0 else TokenDirection.DEBIT
+        db.add(
+            TokenLedger(
+                user_id=int(user_id),
+                direction=direction,
+                amount=abs(delta),
+                source=TokenSource.ADJUSTMENT,
+                reason=reason or SOURCE_LABELS[TokenSource.ADJUSTMENT],
+                reference=reference,
+                balance_after=target,
+            )
+        )
+        db.commit()
+        cached = db.get(User, int(user_id))
+        if cached is not None:
+            cached.token_balance = target
+
+    created = None
+    try:
+        created_row = db.execute(
+            text("SELECT created_at, is_disabled FROM users WHERE id = :uid"),
+            {"uid": int(user_id)},
+        ).mappings().first()
+    except Exception:
+        db.rollback()
+        created_row = None
+    if created_row is not None:
+        created = created_row.get("created_at")
+        disabled = bool(created_row.get("is_disabled"))
+    else:
+        disabled = False
+
+    return {
+        "id": int(row["id"]),
+        "username": str(row["username"]),
+        "token_balance": target,
+        "is_disabled": disabled,
+        "created_at": created,
+    }

@@ -102,13 +102,59 @@ def test_admin_can_adjust_own_account(client: TestClient) -> None:
         headers=headers,
         json={"balance": 500},
     )
-    assert tokens.status_code == 200
+    assert tokens.status_code == 200, tokens.text
     assert tokens.json()["token_balance"] == 500
+    assert tokens.json()["username"] == "justinv"
+
+    zero = client.put(
+        f"/api/v1/admin/users/{uid}/tokens",
+        headers=headers,
+        json={"balance": 0},
+    )
+    assert zero.status_code == 200, zero.text
+    assert zero.json()["token_balance"] == 0
+
+    restored = client.put(
+        f"/api/v1/admin/users/{uid}/tokens",
+        headers=headers,
+        json={"balance": 250},
+    )
+    assert restored.status_code == 200
+    assert restored.json()["token_balance"] == 250
+
+    wallet = client.get("/api/v1/wallet", headers=headers)
+    assert wallet.json()["balance"] == 250
 
     renamed = client.put(
         f"/api/v1/admin/users/{uid}/username",
         headers=headers,
-        json={"username": "justinv"},
+        json={"username": "Justinv"},
     )
-    assert renamed.status_code == 200
-    assert renamed.json()["username"] == "justinv"
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["username"] == "Justinv"
+
+    listed = client.get("/api/v1/admin/users", headers=headers)
+    assert listed.status_code == 200
+    me = next(row for row in listed.json()["users"] if row["id"] == uid)
+    assert me["username"] == "Justinv"
+    assert me["token_balance"] == 250
+
+
+def test_admin_list_includes_new_signups(client: TestClient) -> None:
+    admin = register(client, "justinv")
+    headers = auth(admin["access_token"])
+    first = client.get("/api/v1/admin/users", headers=headers)
+    assert first.status_code == 200
+    assert {row["username"] for row in first.json()["users"]} == {"justinv"}
+
+    newbie = register(client, "newbie")
+    assert newbie["user"]["token_balance"] == 100
+
+    listed = client.get("/api/v1/admin/users", headers=headers)
+    assert listed.status_code == 200
+    rows = listed.json()["users"]
+    names = {row["username"] for row in rows}
+    assert names == {"justinv", "newbie"}
+    found = next(row for row in rows if row["username"] == "newbie")
+    assert found["id"] == newbie["user"]["id"]
+    assert found["token_balance"] == 100
