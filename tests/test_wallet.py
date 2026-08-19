@@ -58,15 +58,20 @@ def test_wallet_routes_require_auth(client: TestClient) -> None:
     ).status_code == 401
 
 
-def test_new_wallet_is_empty(client: TestClient) -> None:
+def test_new_account_starts_with_welcome_bonus(client: TestClient) -> None:
     user = register(client)
     wallet = client.get("/api/v1/wallet", headers=auth(user["access_token"]))
     assert wallet.status_code == 200
-    assert wallet.json() == {"balance": 0, "earned": 0, "spent": 0}
+    assert wallet.json() == {"balance": 100, "earned": 100, "spent": 0}
 
     history = client.get("/api/v1/wallet/history", headers=auth(user["access_token"]))
     assert history.status_code == 200
-    assert history.json() == {"history": [], "total": 0}
+    assert history.json()["total"] == 1
+    entry = history.json()["history"][0]
+    assert entry["source"] == "welcome"
+    assert entry["amount"] == 100
+    assert entry["direction"] == "credit"
+    assert entry["reason"] == "Welcome bonus"
 
 
 def test_credit_increases_balance_and_writes_ledger(client: TestClient) -> None:
@@ -74,17 +79,17 @@ def test_credit_increases_balance_and_writes_ledger(client: TestClient) -> None:
     response = credit(client, user["access_token"], 50, source="birdie", reason="Birdie on 7")
     assert response.status_code == 201
     body = response.json()
-    assert body["balance"] == 50
-    assert body["earned"] == 50
+    assert body["balance"] == 150
+    assert body["earned"] == 150
     assert body["spent"] == 0
     assert body["entry"]["direction"] == "credit"
     assert body["entry"]["amount"] == 50
     assert body["entry"]["source"] == "birdie"
     assert body["entry"]["reason"] == "Birdie on 7"
-    assert body["entry"]["balance_after"] == 50
+    assert body["entry"]["balance_after"] == 150
 
     wallet = client.get("/api/v1/wallet", headers=auth(user["access_token"]))
-    assert wallet.json()["balance"] == 50
+    assert wallet.json()["balance"] == 150
 
 
 def test_debit_decreases_balance(client: TestClient) -> None:
@@ -93,27 +98,22 @@ def test_debit_decreases_balance(client: TestClient) -> None:
     response = debit(client, user["access_token"], 15, source="wager", reason="Hole 3 skin")
     assert response.status_code == 200
     body = response.json()
-    assert body["balance"] == 25
-    assert body["earned"] == 40
+    assert body["balance"] == 125
+    assert body["earned"] == 140
     assert body["spent"] == 15
     assert body["entry"]["direction"] == "debit"
     assert body["entry"]["amount"] == 15
-    assert body["entry"]["balance_after"] == 25
+    assert body["entry"]["balance_after"] == 125
 
 
 def test_debit_cannot_go_below_zero(client: TestClient) -> None:
     user = register(client)
-    credit(client, user["access_token"], 10)
-    response = debit(client, user["access_token"], 11)
+    response = debit(client, user["access_token"], 101)
     assert response.status_code == 409
     assert "insufficient" in response.json()["detail"].lower()
 
     wallet = client.get("/api/v1/wallet", headers=auth(user["access_token"]))
-    assert wallet.json() == {"balance": 10, "earned": 10, "spent": 0}
-
-    history = client.get("/api/v1/wallet/history", headers=auth(user["access_token"]))
-    assert history.json()["total"] == 1
-    assert history.json()["history"][0]["direction"] == "credit"
+    assert wallet.json() == {"balance": 100, "earned": 100, "spent": 0}
 
 
 def test_zero_or_negative_amount_rejected(client: TestClient) -> None:
@@ -145,17 +145,18 @@ def test_history_is_newest_first_and_isolated(client: TestClient) -> None:
     history = client.get("/api/v1/wallet/history", headers=auth(alice["access_token"]))
     assert history.status_code == 200
     body = history.json()
-    assert body["total"] == 3
+    assert body["total"] == 4
     reasons = [row["reason"] for row in body["history"]]
-    assert reasons == ["Skin", "Front nine", "Par on 1"]
-    assert [row["balance_after"] for row in body["history"]] == [40, 50, 20]
+    assert reasons[:3] == ["Skin", "Front nine", "Par on 1"]
+    assert reasons[3] == "Welcome bonus"
+    assert [row["balance_after"] for row in body["history"]] == [140, 150, 120, 100]
 
     bob_history = client.get("/api/v1/wallet/history", headers=auth(bob["access_token"]))
-    assert bob_history.json()["total"] == 1
+    assert bob_history.json()["total"] == 2
     assert bob_history.json()["history"][0]["reason"] == "Bob only"
 
     bob_wallet = client.get("/api/v1/wallet", headers=auth(bob["access_token"]))
-    assert bob_wallet.json()["balance"] == 99
+    assert bob_wallet.json()["balance"] == 199
 
 
 def test_default_reason_and_reference(client: TestClient) -> None:
@@ -185,6 +186,6 @@ def test_history_pagination(client: TestClient) -> None:
         headers=auth(user["access_token"]),
     )
     assert page.status_code == 200
-    assert page.json()["total"] == 3
+    assert page.json()["total"] == 4
     assert len(page.json()["history"]) == 1
     assert page.json()["history"][0]["reason"] == "hit 1"

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     PHOTO_DIR: str = str(_BACKEND_DIR / "var" / "photos")
     PHOTO_MAX_BYTES: int = 5 * 1024 * 1024
     PORT: int = 8000
+    ADMIN_USERNAME: str = "justinv"
 
     @property
     def photo_dir(self) -> Path:

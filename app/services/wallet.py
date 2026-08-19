@@ -29,8 +29,10 @@ SOURCE_LABELS: dict[TokenSource, str] = {
 }
 
 # Defaults for later award_tokens() calls from rounds / skins / challenges.
+WELCOME_BONUS = 100
+
 DEFAULT_CREDIT_AMOUNTS: dict[TokenSource, int] = {
-    TokenSource.WELCOME: 1000,
+    TokenSource.WELCOME: WELCOME_BONUS,
     TokenSource.ROUND_COMPLETE_9: 50,
     TokenSource.ROUND_COMPLETE_18: 100,
     TokenSource.PAR: 5,

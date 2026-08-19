@@ -36,17 +36,25 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-def _ensure_user_token_balance() -> None:
+def _ensure_user_columns() -> None:
     inspector = inspect(engine)
     if "users" not in inspector.get_table_names():
         return
     columns = {col["name"] for col in inspector.get_columns("users")}
-    if "token_balance" in columns:
+    statements: list[str] = []
+    if "token_balance" not in columns:
+        statements.append(
+            "ALTER TABLE users ADD COLUMN token_balance INTEGER NOT NULL DEFAULT 0"
+        )
+    if "is_disabled" not in columns:
+        statements.append(
+            "ALTER TABLE users ADD COLUMN is_disabled BOOLEAN NOT NULL DEFAULT 0"
+        )
+    if not statements:
         return
     with engine.begin() as conn:
-        conn.execute(
-            text("ALTER TABLE users ADD COLUMN token_balance INTEGER NOT NULL DEFAULT 0")
-        )
+        for sql in statements:
+            conn.execute(text(sql))
 
 
 def init_db(*, retries: int = 8) -> None:
@@ -58,7 +66,7 @@ def init_db(*, retries: int = 8) -> None:
     for attempt in range(attempts):
         try:
             Base.metadata.create_all(bind=engine)
-            _ensure_user_token_balance()
+            _ensure_user_columns()
             print(f"database ready ({engine.dialect.name})", flush=True)
             return
         except Exception as exc:

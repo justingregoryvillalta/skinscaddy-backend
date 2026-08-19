@@ -44,6 +44,15 @@ def credit(client: TestClient, token: str, amount: int) -> None:
     assert response.status_code == 201, response.text
 
 
+def debit(client: TestClient, token: str, amount: int) -> None:
+    response = client.post(
+        "/api/v1/wallet/debit",
+        headers=auth(token),
+        json={"amount": amount, "source": "wager", "reason": "Drain welcome"},
+    )
+    assert response.status_code == 200, response.text
+
+
 def add_round(client: TestClient, token: str, total_per_hole: int = 4) -> dict:
     scores = [total_per_hole] * 9
     response = client.post(
@@ -141,8 +150,8 @@ def test_create_accept_and_complete_pays_winner(client: TestClient) -> None:
     assert accepted.json()["status"] == "active"
     assert accepted.json()["pot_amount"] == 20
 
-    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 40
-    assert client.get("/api/v1/wallet", headers=auth(bob["access_token"])).json()["balance"] == 40
+    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 140
+    assert client.get("/api/v1/wallet", headers=auth(bob["access_token"])).json()["balance"] == 140
 
     scores = client.post(
         f"/api/v1/challenges/{body['id']}/scores",
@@ -157,8 +166,8 @@ def test_create_accept_and_complete_pays_winner(client: TestClient) -> None:
     winner_ids = done["result"]["winner_ids"]
     assert bob["user"]["id"] in winner_ids
 
-    assert client.get("/api/v1/wallet", headers=auth(bob["access_token"])).json()["balance"] == 60
-    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 40
+    assert client.get("/api/v1/wallet", headers=auth(bob["access_token"])).json()["balance"] == 160
+    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 140
 
 
 def test_decline_then_all_declined_expires(client: TestClient) -> None:
@@ -176,7 +185,7 @@ def test_decline_then_all_declined_expires(client: TestClient) -> None:
     )
     assert declined.status_code == 200
     assert declined.json()["status"] == "expired"
-    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 20
+    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 120
 
 
 def test_only_invitee_can_accept(client: TestClient) -> None:
@@ -210,6 +219,7 @@ def test_accept_requires_tokens(client: TestClient) -> None:
     bob = register(client, "bob")
     become_friends(client, alice, bob)
     credit(client, alice["access_token"], 20)
+    debit(client, bob["access_token"], 100)
     rnd = add_round(client, alice["access_token"])
     cid = create_challenge(client, alice["access_token"], ["bob"], rnd["id"], wager=10).json()["id"]
     poor = client.post(
@@ -250,8 +260,8 @@ def test_forfeit_on_deadline_pays_finishers(
     assert body["status"] == "forfeited"
     assert body["result"]["kind"] == "forfeited"
     assert alice["user"]["id"] in body["result"]["winner_ids"]
-    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 40
-    assert client.get("/api/v1/wallet", headers=auth(bob["access_token"])).json()["balance"] == 20
+    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 140
+    assert client.get("/api/v1/wallet", headers=auth(bob["access_token"])).json()["balance"] == 120
 
 
 def test_history_lists_challenges_for_each_user(client: TestClient) -> None:

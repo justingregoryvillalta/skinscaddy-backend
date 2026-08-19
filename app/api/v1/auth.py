@@ -12,6 +12,7 @@ from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
 from app.schemas.user import UserPublic
 from app.services.users import (
+    AccountDisabledError,
     InvalidCredentialsError,
     UsernameTakenError,
     authenticate_user,
@@ -55,5 +56,10 @@ def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
             headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except AccountDisabledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
         ) from exc
     return _token_response(user)

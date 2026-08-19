@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.security import decode_access_token
 from app.database import get_db
 from app.models.user import User
@@ -41,4 +42,19 @@ def get_current_user(
             detail="Invalid or expired token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if getattr(user, "is_disabled", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is disabled.",
+        )
     return user
+
+
+def get_admin_user(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+    admin = (get_settings().ADMIN_USERNAME or "justinv").strip().lower()
+    if current_user.username.lower() != admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin only.",
+        )
+    return current_user
