@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: skinscaddy-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: skinscaddy
+      POSTGRES_PASSWORD: skinscaddy
+      POSTGRES_DB: skinscaddy
+    ports:
+      - "5432:5432"
+    volumes:
+      - skinscaddy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skinscaddy -d skinscaddy"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  skinscaddy_pgdata:
