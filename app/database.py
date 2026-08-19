@@ -47,9 +47,15 @@ def _ensure_user_columns() -> None:
             "ALTER TABLE users ADD COLUMN token_balance INTEGER NOT NULL DEFAULT 0"
         )
     if "is_disabled" not in columns:
-        statements.append(
-            "ALTER TABLE users ADD COLUMN is_disabled BOOLEAN NOT NULL DEFAULT 0"
-        )
+        # PostgreSQL rejects DEFAULT 0 for boolean; SQLite stores boolean as 0/1.
+        if engine.dialect.name == "postgresql":
+            statements.append(
+                "ALTER TABLE users ADD COLUMN is_disabled BOOLEAN NOT NULL DEFAULT false"
+            )
+        else:
+            statements.append(
+                "ALTER TABLE users ADD COLUMN is_disabled BOOLEAN NOT NULL DEFAULT 0"
+            )
     if not statements:
         return
     with engine.begin() as conn:
