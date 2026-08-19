@@ -20,6 +20,7 @@ from app.services.users import (
     AdminError,
     UsernameTakenError,
     delete_user,
+    ensure_welcome_bonus,
     get_user_by_id,
     list_users,
     rename_user,
@@ -31,7 +32,13 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def _public(user: User) -> AdminUserPublic:
-    return AdminUserPublic.model_validate(user)
+    return AdminUserPublic(
+        id=int(user.id),
+        username=str(user.username),
+        token_balance=int(getattr(user, "token_balance", 0) or 0),
+        is_disabled=bool(getattr(user, "is_disabled", False)),
+        created_at=getattr(user, "created_at", None),
+    )
 
 
 def _require_target(db: Session, user_id: int) -> User:
@@ -46,7 +53,14 @@ def admin_list_users(
     _admin: Annotated[User, Depends(get_admin_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> AdminUserListResponse:
-    return AdminUserListResponse(users=[_public(user) for user in list_users(db)])
+    users = list_users(db)
+    for user in users:
+        try:
+            ensure_welcome_bonus(db, user)
+        except Exception:
+            pass
+    users = list_users(db)
+    return AdminUserListResponse(users=[_public(user) for user in users])
 
 
 @router.put("/users/{user_id}/tokens", response_model=AdminUserPublic)

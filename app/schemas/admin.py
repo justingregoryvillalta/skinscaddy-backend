@@ -12,9 +12,9 @@ class AdminUserPublic(BaseModel):
 
     id: int
     username: str
-    token_balance: int
-    is_disabled: bool
-    created_at: datetime
+    token_balance: int = 0
+    is_disabled: bool = False
+    created_at: datetime | None = None
 
 
 class AdminUserListResponse(BaseModel):

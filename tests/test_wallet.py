@@ -74,6 +74,27 @@ def test_new_account_starts_with_welcome_bonus(client: TestClient) -> None:
     assert entry["reason"] == "Welcome bonus"
 
 
+def test_login_grants_welcome_if_missing(client: TestClient, db_session) -> None:
+    from app.models.user import User
+    from app.models.wallet import TokenLedger
+
+    user = register(client, "latebonus")
+    uid = user["user"]["id"]
+    row = db_session.get(User, uid)
+    assert row is not None
+    row.token_balance = 0
+    db_session.query(TokenLedger).filter(TokenLedger.user_id == uid).delete()
+    db_session.commit()
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "latebonus", "password": "password123"},
+    )
+    assert login.status_code == 200
+    wallet = client.get("/api/v1/wallet", headers=auth(login.json()["access_token"]))
+    assert wallet.json()["balance"] == 100
+
+
 def test_credit_increases_balance_and_writes_ledger(client: TestClient) -> None:
     user = register(client)
     response = credit(client, user["access_token"], 50, source="birdie", reason="Birdie on 7")
