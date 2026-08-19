@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_admin_user
-from app.config import get_settings
 from app.database import get_db
 from app.models.user import User
 from app.models.wallet import TokenSource
@@ -31,10 +30,6 @@ from app.services.wallet import credit_tokens, debit_tokens
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-def _admin_name() -> str:
-    return (get_settings().ADMIN_USERNAME or "justinv").strip().lower()
-
-
 def _public(user: User) -> AdminUserPublic:
     return AdminUserPublic.model_validate(user)
 
@@ -44,14 +39,6 @@ def _require_target(db: Session, user_id: int) -> User:
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
     return user
-
-
-def _guard_admin_account(user: User, *, action: str) -> None:
-    if user.username.lower() == _admin_name():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot {action} the admin account.",
-        )
 
 
 @router.get("/users", response_model=AdminUserListResponse)
@@ -103,7 +90,6 @@ def admin_rename_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> AdminUserPublic:
     user = _require_target(db, user_id)
-    _guard_admin_account(user, action="rename")
     try:
         user = rename_user(db, user, body.username)
     except UsernameTakenError as exc:
@@ -119,7 +105,6 @@ def admin_flag_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> AdminUserPublic:
     user = _require_target(db, user_id)
-    _guard_admin_account(user, action="flag")
     return _public(set_user_disabled(db, user, body.disabled))
 
 
@@ -130,7 +115,6 @@ def admin_delete_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     user = _require_target(db, user_id)
-    _guard_admin_account(user, action="delete")
     try:
         delete_user(db, user)
     except AdminError as exc:

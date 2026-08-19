@@ -92,10 +92,23 @@ def test_admin_rename_flag_and_delete(client: TestClient) -> None:
     assert [row["username"] for row in listed.json()["users"]] == ["justinv"]
 
 
-def test_admin_cannot_delete_self(client: TestClient) -> None:
+def test_admin_can_adjust_own_account(client: TestClient) -> None:
     admin = register(client, "justinv")
-    gone = client.delete(
-        f"/api/v1/admin/users/{admin['user']['id']}",
-        headers=auth(admin["access_token"]),
+    headers = auth(admin["access_token"])
+    uid = admin["user"]["id"]
+
+    tokens = client.put(
+        f"/api/v1/admin/users/{uid}/tokens",
+        headers=headers,
+        json={"balance": 500},
     )
-    assert gone.status_code == 400
+    assert tokens.status_code == 200
+    assert tokens.json()["token_balance"] == 500
+
+    renamed = client.put(
+        f"/api/v1/admin/users/{uid}/username",
+        headers=headers,
+        json={"username": "justinv"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["username"] == "justinv"
