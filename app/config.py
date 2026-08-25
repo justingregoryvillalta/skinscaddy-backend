@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     PHOTO_MAX_BYTES: int = 5 * 1024 * 1024
     PORT: int = 8000
     ADMIN_USERNAME: str = "justinv"
+    # Render dashboard uses APP_BASE_URL; PUBLIC_BASE_URL is the local alias.
+    APP_BASE_URL: str = ""
+    PUBLIC_BASE_URL: str = "http://127.0.0.1:8000"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+    SMTP_USE_TLS: bool = True
+    SMTP_USE_SSL: bool = False
+    VERIFICATION_HOURS: int = 48
 
     @property
     def photo_dir(self) -> Path:

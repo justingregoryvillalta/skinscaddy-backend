@@ -2,18 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-
-def register(client: TestClient, username: str, password: str = "password123") -> dict:
-    response = client.post(
-        "/api/v1/auth/register",
-        json={"username": username, "password": password},
-    )
-    assert response.status_code == 201, response.text
-    return response.json()
-
-
-def auth(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+from tests.helpers import auth, register, register_pending
 
 
 def test_admin_routes_require_justinv(client: TestClient) -> None:
@@ -140,6 +129,120 @@ def test_admin_can_adjust_own_account(client: TestClient) -> None:
     assert me["token_balance"] == 250
 
 
+def test_admin_login_uses_justinv_password(client: TestClient) -> None:
+    register(client, "justinv", password="justinv-secret")
+    denied = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "password123"},
+    )
+    assert denied.status_code == 401
+
+    ok = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "justinv-secret"},
+    )
+    assert ok.status_code == 200, ok.text
+    body = ok.json()
+    assert body["user"]["username"] == "admin"
+    assert body["access_token"]
+
+    listed = client.get("/api/v1/admin/users", headers=auth(body["access_token"]))
+    assert listed.status_code == 200
+    names = {row["username"] for row in listed.json()["users"]}
+    assert names == {"admin", "justinv"}
+
+
+def test_admin_login_without_justinv_fails(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "password123"},
+    )
+    assert response.status_code == 401
+
+
+def test_justinv_player_login_still_works(client: TestClient) -> None:
+    register(client, "justinv")
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "justinv", "password": "password123"},
+    )
+    assert login.status_code == 200
+    assert login.json()["user"]["username"] == "justinv"
+    listed = client.get(
+        "/api/v1/admin/users",
+        headers=auth(login.json()["access_token"]),
+    )
+    assert listed.status_code == 200
+    names = {row["username"] for row in listed.json()["users"]}
+    assert names == {"justinv"}
+
+
+def test_admin_can_edit_own_account_and_cannot_delete_self(client: TestClient) -> None:
+    register(client, "justinv")
+    admin = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "password123"},
+    )
+    assert admin.status_code == 200
+    headers = auth(admin.json()["access_token"])
+    uid = admin.json()["user"]["id"]
+
+    tokens = client.put(
+        f"/api/v1/admin/users/{uid}/tokens",
+        headers=headers,
+        json={"balance": 750},
+    )
+    assert tokens.status_code == 200, tokens.text
+    assert tokens.json()["token_balance"] == 750
+    assert tokens.json()["username"] == "admin"
+
+    renamed = client.put(
+        f"/api/v1/admin/users/{uid}/username",
+        headers=headers,
+        json={"username": "rootadmin"},
+    )
+    assert renamed.status_code == 409
+
+    flagged = client.post(
+        f"/api/v1/admin/users/{uid}/flag",
+        headers=headers,
+        json={"disabled": True},
+    )
+    assert flagged.status_code == 409
+
+    deleted = client.delete(f"/api/v1/admin/users/{uid}", headers=headers)
+    assert deleted.status_code == 409
+
+    listed = client.get("/api/v1/admin/users", headers=headers)
+    me = next(row for row in listed.json()["users"] if row["id"] == uid)
+    assert me["username"] == "admin"
+    assert me["token_balance"] == 750
+    assert me["is_disabled"] is False
+
+
+def test_admin_portal_sees_new_signups(client: TestClient) -> None:
+    register(client, "justinv")
+    admin = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "password123"},
+    )
+    assert admin.status_code == 200
+    headers = auth(admin.json()["access_token"])
+    newbie = register(client, "newbie")
+    listed = client.get("/api/v1/admin/users", headers=headers)
+    assert listed.status_code == 200
+    names = {row["username"] for row in listed.json()["users"]}
+    assert names == {"admin", "justinv", "newbie"}
+    found = next(row for row in listed.json()["users"] if row["username"] == "newbie")
+    assert found["id"] == newbie["user"]["id"]
+    assert found["token_balance"] == 100
+    assert found["email"] == "newbie@example.test"
+    assert found["first_name"] == "Test"
+    assert found["last_name"] == "User"
+    assert found["postal_code"] == "M5V 1A1"
+    assert found["is_verified"] is True
+
+
 def test_admin_list_includes_new_signups(client: TestClient) -> None:
     admin = register(client, "justinv")
     headers = auth(admin["access_token"])
@@ -158,3 +261,28 @@ def test_admin_list_includes_new_signups(client: TestClient) -> None:
     found = next(row for row in rows if row["username"] == "newbie")
     assert found["id"] == newbie["user"]["id"]
     assert found["token_balance"] == 100
+
+
+def test_admin_sees_unverified_signup_profile(client: TestClient) -> None:
+    admin = register(client, "justinv")
+    headers = auth(admin["access_token"])
+    pending = register_pending(
+        client,
+        "kidcheck",
+        first_name="Alex",
+        last_name="Rivera",
+        email="alex.rivera@example.test",
+        postal_code="43017",
+    )
+    assert pending.status_code == 201, pending.text
+    listed = client.get("/api/v1/admin/users", headers=headers)
+    assert listed.status_code == 200
+    found = next(row for row in listed.json()["users"] if row["username"] == "kidcheck")
+    assert found["first_name"] == "Alex"
+    assert found["last_name"] == "Rivera"
+    assert found["email"] == "alex.rivera@example.test"
+    assert found["postal_code"] == "43017"
+    assert found["is_verified"] is False
+    assert found["token_balance"] == 100
+    assert found.get("play_intent") in (None, "")
+    assert found.get("starting_tokens") is None

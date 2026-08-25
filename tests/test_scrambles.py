@@ -2,18 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-
-def register(client: TestClient, username: str, password: str = "password123") -> dict:
-    response = client.post(
-        "/api/v1/auth/register",
-        json={"username": username, "password": password},
-    )
-    assert response.status_code == 201, response.text
-    return response.json()
-
-
-def auth(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+from tests.helpers import auth, register
 
 
 def tee_off(client: TestClient, token: str, host_team_index: int = 0):

@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-
-def register(client: TestClient, username: str = "justin", password: str = "password123"):
-    return client.post(
-        "/api/v1/auth/register",
-        json={"username": username, "password": password},
-    )
+from tests.helpers import auth, register, register_pending
 
 
 def test_health(client: TestClient) -> None:
@@ -18,32 +13,55 @@ def test_health(client: TestClient) -> None:
     assert body["service"] == "skinscaddy"
 
 
-def test_register_returns_token_and_user(client: TestClient) -> None:
-    response = register(client)
-    assert response.status_code == 201
+def test_register_creates_unverified_account(client: TestClient) -> None:
+    response = register_pending(client, "justin")
+    assert response.status_code == 201, response.text
     body = response.json()
+    assert body["ok"] is True
+    assert body["username"] == "justin"
+    assert body["email"] == "justin@example.test"
+    assert "access_token" not in body
+    assert body["verification_token"]
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "justin", "password": "password123"},
+    )
+    assert login.status_code == 403
+    assert "verify" in login.json()["detail"].lower()
+
+
+def test_verify_then_login(client: TestClient) -> None:
+    body = register(client)
     assert body["token_type"] == "bearer"
     assert body["access_token"]
-    assert body["expires_in"] == 3600
     assert body["user"]["username"] == "justin"
-    assert body["user"]["id"] == 1
+    assert body["user"]["email"] == "justin@example.test"
+    assert body["user"]["first_name"] == "Test"
+    assert body["user"]["is_verified"] is True
     assert "hashed_password" not in body["user"]
 
 
 def test_register_duplicate_username_is_conflict(client: TestClient) -> None:
-    assert register(client).status_code == 201
-    response = register(client, username="JUSTIN")
+    assert register_pending(client, "justin").status_code == 201
+    response = register_pending(client, "JUSTIN", email="other@example.test")
     assert response.status_code == 409
     assert "already taken" in response.json()["detail"].lower()
 
 
+def test_register_duplicate_email_is_conflict(client: TestClient) -> None:
+    assert register_pending(client, "alpha", email="same@example.test").status_code == 201
+    response = register_pending(client, "bravo", email="same@example.test")
+    assert response.status_code == 409
+    assert "email" in response.json()["detail"].lower()
+
+
 def test_register_rejects_short_password(client: TestClient) -> None:
-    response = register(client, password="short")
+    response = register_pending(client, "justin", password="short")
     assert response.status_code == 422
 
 
 def test_register_rejects_invalid_username(client: TestClient) -> None:
-    response = register(client, username="bad name!")
+    response = register_pending(client, "bad name!")
     assert response.status_code == 422
 
 
@@ -69,6 +87,13 @@ def test_login_wrong_password(client: TestClient) -> None:
     assert "invalid" in response.json()["detail"].lower()
 
 
+def test_register_reserved_admin_username(client: TestClient) -> None:
+    response = register_pending(client, "admin")
+    assert response.status_code == 409
+    assert "already taken" in response.json()["detail"].lower()
+    assert register_pending(client, "Admin").status_code == 409
+
+
 def test_health_reports_welcome_and_admin(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
@@ -76,6 +101,7 @@ def test_health_reports_welcome_and_admin(client: TestClient) -> None:
     assert body["ok"] is True
     assert body["welcome_bonus"] == 100
     assert body["admin"] is True
+    assert "mail_configured" in body
 
 
 def test_protected_requires_token(client: TestClient) -> None:
@@ -84,8 +110,8 @@ def test_protected_requires_token(client: TestClient) -> None:
 
 
 def test_protected_and_me_accept_valid_token(client: TestClient) -> None:
-    token = register(client).json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    token = register(client)["access_token"]
+    headers = auth(token)
 
     protected = client.get("/api/v1/protected", headers=headers)
     assert protected.status_code == 200
@@ -104,3 +130,63 @@ def test_protected_rejects_garbage_token(client: TestClient) -> None:
         headers={"Authorization": "Bearer not-a-real-token"},
     )
     assert response.status_code == 401
+
+
+def test_verify_get_activates_account(client: TestClient) -> None:
+    pending = register_pending(client, "pat")
+    token = pending.json()["verification_token"]
+    page = client.get("/api/v1/auth/verify", params={"token": token})
+    assert page.status_code == 200
+    assert "activated" in page.text.lower()
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "pat", "password": "password123"},
+    )
+    assert login.status_code == 200
+
+
+def test_send_verification_alias_matches_resend(client: TestClient) -> None:
+    register_pending(client, "mailalias")
+    resent = client.post(
+        "/api/v1/auth/send-verification",
+        json={"username": "mailalias", "email": "mailalias@example.test"},
+    )
+    assert resent.status_code == 200, resent.text
+    body = resent.json()
+    assert "email_sent" in body
+    assert body["email"] == "mailalias@example.test"
+
+
+def test_resend_reports_when_mail_not_configured(client: TestClient) -> None:
+    register_pending(client, "mailfail")
+    resent = client.post(
+        "/api/v1/auth/resend-verification",
+        json={"username": "mailfail", "email": "mailfail@example.test"},
+    )
+    assert resent.status_code == 200, resent.text
+    body = resent.json()
+    assert body["email_sent"] is False
+    assert body["email"] == "mailfail@example.test"
+    assert "smtp" in (body.get("error") or "").lower() or "mail" in (body.get("error") or "").lower()
+    assert body.get("verification_token")
+
+
+def test_resend_verification(client: TestClient) -> None:
+    register_pending(client, "sam")
+    denied = client.post(
+        "/api/v1/auth/login",
+        json={"username": "sam", "password": "password123"},
+    )
+    assert denied.status_code == 403
+    resent = client.post(
+        "/api/v1/auth/resend-verification",
+        json={"username": "sam"},
+    )
+    assert resent.status_code == 200
+    token = resent.json()["verification_token"]
+    assert client.post("/api/v1/auth/verify", json={"token": token}).status_code == 200
+    ok = client.post(
+        "/api/v1/auth/login",
+        json={"username": "sam", "password": "password123"},
+    )
+    assert ok.status_code == 200

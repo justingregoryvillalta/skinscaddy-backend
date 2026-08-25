@@ -29,7 +29,7 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     application = FastAPI(
         title=settings.APP_NAME,
-        version="0.1.2",
+        version="0.1.3",
         description="SkinsCaddy backend — accounts, friends, wallet, challenges, feed, photos, scramble, and admin.",
         lifespan=lifespan,
     )
@@ -50,6 +50,8 @@ app = create_app()
 
 @app.get("/health")
 def health() -> dict:
+    from app.services.email import smtp_configured
+
     return {
         "ok": True,
         "service": "skinscaddy",
@@ -57,5 +59,6 @@ def health() -> dict:
         "database": "sqlite" if settings.uses_sqlite else "postgresql",
         "welcome_bonus": 100,
         "admin": True,
-        "version": "0.1.2",
+        "mail_configured": smtp_configured(),
+        "version": "0.1.3",
     }

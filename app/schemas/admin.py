@@ -12,8 +12,19 @@ class AdminUserPublic(BaseModel):
 
     id: int
     username: str
+    first_name: str | None = None
+    last_name: str | None = None
+    email: str | None = None
+    postal_code: str | None = None
     token_balance: int = 0
     is_disabled: bool = False
+    is_verified: bool = True
+    play_intent: str | None = None
+    play_style: str | None = None
+    skins_frequency: str | None = None
+    skins_feel: str | None = None
+    skins_pot_band: str | None = None
+    starting_tokens: int | None = None
     created_at: datetime | None = None
 
 

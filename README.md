@@ -61,15 +61,15 @@ Tables are created automatically on first startup (`create_all`). On Render this
 
 ## Try the auth flow
 
-Register (username 3–32 chars: letters, numbers, `_`; password 8+ chars):
+Register (then activate via the emailed link before login):
 
 ```bash
 curl -s http://127.0.0.1:8000/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"username":"justin","password":"password123"}'
+  -d '{"username":"justin","password":"password123","first_name":"Justin","last_name":"Villalta","email":"justin@example.com","postal_code":"M5V 1A1"}'
 ```
 
-Login:
+In development the response includes `verification_url`. Open it, then log in:
 
 ```bash
 curl -s http://127.0.0.1:8000/api/v1/auth/login \

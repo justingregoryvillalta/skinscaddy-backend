@@ -56,11 +56,51 @@ def _ensure_user_columns() -> None:
             statements.append(
                 "ALTER TABLE users ADD COLUMN is_disabled BOOLEAN NOT NULL DEFAULT 0"
             )
+    string_cols = {
+        "first_name": "VARCHAR(50)",
+        "last_name": "VARCHAR(50)",
+        "email": "VARCHAR(254)",
+        "postal_code": "VARCHAR(16)",
+        "verification_token_hash": "VARCHAR(64)",
+        "signup_profile": "TEXT",
+    }
+    for name, ddl in string_cols.items():
+        if name not in columns:
+            statements.append(f"ALTER TABLE users ADD COLUMN {name} {ddl}")
+    if "email_verified_at" not in columns:
+        statements.append("ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMP")
+    if "verification_expires_at" not in columns:
+        statements.append("ALTER TABLE users ADD COLUMN verification_expires_at TIMESTAMP")
+    if "is_verified" not in columns:
+        # Existing accounts stay active; new signups set this to false in code.
+        if engine.dialect.name == "postgresql":
+            statements.append(
+                "ALTER TABLE users ADD COLUMN is_verified BOOLEAN NOT NULL DEFAULT true"
+            )
+        else:
+            statements.append(
+                "ALTER TABLE users ADD COLUMN is_verified BOOLEAN NOT NULL DEFAULT 1"
+            )
     if not statements:
+        _ensure_email_unique_index()
         return
     with engine.begin() as conn:
         for sql in statements:
             conn.execute(text(sql))
+    _ensure_email_unique_index()
+
+
+def _ensure_email_unique_index() -> None:
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_lower "
+                    "ON users (lower(email))"
+                )
+            )
+    except Exception:
+        pass
 
 
 def init_db(*, retries: int = 8) -> None:

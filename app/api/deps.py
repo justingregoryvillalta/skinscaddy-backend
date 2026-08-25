@@ -6,11 +6,10 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.core.security import decode_access_token
 from app.database import get_db
 from app.models.user import User
-from app.services.users import get_user_by_id
+from app.services.users import get_user_by_id, is_admin_account
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -47,12 +46,16 @@ def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account is disabled.",
         )
+    if getattr(user, "is_verified", True) is False:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email. Check your inbox for the activation link.",
+        )
     return user
 
 
 def get_admin_user(current_user: Annotated[User, Depends(get_current_user)]) -> User:
-    admin = (get_settings().ADMIN_USERNAME or "justinv").strip().lower()
-    if current_user.username.lower() != admin:
+    if not is_admin_account(current_user.username):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin only.",
