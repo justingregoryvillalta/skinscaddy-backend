@@ -42,7 +42,10 @@ def public_base_url() -> str:
 
 
 def verification_link(raw_token: str) -> str:
-    return f"{public_base_url()}/api/v1/auth/verify?token={raw_token}"
+    from urllib.parse import quote
+
+    token = (raw_token or "").strip()
+    return f"{public_base_url()}/api/v1/auth/verify?token={quote(token, safe='')}"
 
 
 def send_verification_email(*, to_email: str, username: str, raw_token: str) -> tuple[bool, str]:

@@ -143,6 +143,32 @@ def test_verify_get_activates_account(client: TestClient) -> None:
         json={"username": "pat", "password": "password123"},
     )
     assert login.status_code == 200
+    # Same link again is success, not "already used".
+    again = client.get("/api/v1/auth/verify", params={"token": token})
+    assert again.status_code == 200
+    assert "activated" in again.text.lower()
+
+
+def test_verify_get_marks_user_verified(client: TestClient) -> None:
+    pending = register_pending(client, "verifyget", email="verifyget@example.test")
+    assert pending.status_code == 201
+    token = pending.json()["verification_token"]
+    assert token
+    blocked = client.post(
+        "/api/v1/auth/login",
+        json={"username": "verifyget", "password": "password123"},
+    )
+    assert blocked.status_code == 403
+    page = client.get("/api/v1/auth/verify", params={"token": token})
+    assert page.status_code == 200
+    assert "activated" in page.text.lower()
+    assert "activation failed" not in page.text.lower()
+    ok = client.post(
+        "/api/v1/auth/login",
+        json={"username": "verifyget", "password": "password123"},
+    )
+    assert ok.status_code == 200
+    assert ok.json()["user"]["is_verified"] is True
 
 
 def test_send_verification_resends_for_unverified_user(client: TestClient) -> None:

@@ -165,7 +165,7 @@ def register(
 @router.get("/verify", response_class=HTMLResponse)
 def verify_email_get(
     db: Annotated[Session, Depends(get_db)],
-    token: str = Query(min_length=8, max_length=200),
+    token: str = Query(min_length=8, max_length=400),
 ) -> HTMLResponse:
     try:
         user = verify_user_token(db, token)

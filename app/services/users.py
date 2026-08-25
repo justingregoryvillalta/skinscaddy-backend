@@ -111,12 +111,33 @@ def hash_verification_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
+def normalize_verify_token(raw_token: str) -> str:
+    """Same string we put in ?token= after the client/browser decodes the URL."""
+    from urllib.parse import unquote
+
+    token = (raw_token or "").strip().strip("<>\"'")
+    for _ in range(2):
+        nxt = unquote(token)
+        if nxt == token:
+            break
+        token = nxt.strip()
+    while token and token[-1] in ".,);]>":
+        token = token[:-1]
+    return token.strip()
+
+
 def issue_verification_token(user: User) -> str:
+    # urlsafe so it can sit in an email link; we store sha256 of THIS string.
     raw = secrets.token_urlsafe(32)
-    hours = max(1, int(get_settings().VERIFICATION_HOURS or 48))
+    hours = max(24, int(get_settings().VERIFICATION_HOURS or 48))
     user.verification_token_hash = hash_verification_token(raw)
     user.verification_expires_at = datetime.now(timezone.utc) + timedelta(hours=hours)
     user.is_verified = False
+    print(
+        f"verify token issued user={getattr(user, 'username', '?')} "
+        f"len={len(raw)} prefix={raw[:4]} hours={hours}",
+        flush=True,
+    )
     return raw
 
 
@@ -181,26 +202,44 @@ def create_user(
 
 
 def verify_user_token(db: Session, raw_token: str) -> User:
-    token = (raw_token or "").strip()
+    token = normalize_verify_token(raw_token)
+    prefix = token[:4] if token else ""
     if len(token) < 8:
+        print(f"verify lookup missing/short len={len(token)} prefix={prefix}", flush=True)
         raise VerificationError("This activation link is invalid.")
     digest = hash_verification_token(token)
     user = db.scalar(select(User).where(User.verification_token_hash == digest))
+    # Legacy: some rows may have stored the urlsafe token itself, not the hash.
     if user is None:
-        # Already used / unknown. If someone is already verified, treat as success.
+        user = db.scalar(select(User).where(User.verification_token_hash == token))
+    if user is None:
+        print(
+            f"verify lookup missing len={len(token)} prefix={prefix} hashed=yes",
+            flush=True,
+        )
         raise VerificationError("This activation link is invalid or has already been used.")
+    already = bool(getattr(user, "is_verified", False))
     expires = getattr(user, "verification_expires_at", None)
-    if expires is not None:
+    expired = False
+    if expires is not None and not already:
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=timezone.utc)
-        if expires < datetime.now(timezone.utc):
-            raise VerificationError("This activation link has expired. Request a new one.")
+        expired = expires < datetime.now(timezone.utc)
+    print(
+        f"verify lookup found user={user.username} already={already} expired={expired} "
+        f"len={len(token)} prefix={prefix}",
+        flush=True,
+    )
+    if already:
+        return user
+    if expired:
+        raise VerificationError("This activation link has expired. Request a new one.")
     user.is_verified = True
     user.email_verified_at = datetime.now(timezone.utc)
-    user.verification_token_hash = None
-    user.verification_expires_at = None
+    # Keep the hash so a second click on the same link is SUCCESS, not failure.
     db.commit()
     db.refresh(user)
+    print(f"verify success user={user.username}", flush=True)
     return user
 
 
