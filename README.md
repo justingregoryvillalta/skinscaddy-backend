@@ -69,6 +69,11 @@ curl -s http://127.0.0.1:8000/api/v1/auth/register \
   -d '{"username":"justin","password":"password123","first_name":"Justin","last_name":"Villalta","email":"justin@example.com","postal_code":"M5V 1A1"}'
 ```
 
+SMTP on Render (Gmail): `SMTP_HOST=smtp.gmail.com`, port `587`, `SMTP_USE_TLS=true`.
+`SMTP_PASSWORD` must be a **Gmail App Password** (Google Account → Security →
+2-Step Verification → App passwords). A normal Gmail password is rejected with
+SMTP 535 — do not turn off SMTP auth to work around that.
+
 In development the response includes `verification_url`. Open it, then log in:
 
 ```bash

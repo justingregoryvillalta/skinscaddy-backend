@@ -41,15 +41,15 @@ def test_verify_then_login(client: TestClient) -> None:
     assert "hashed_password" not in body["user"]
 
 
-def test_register_duplicate_username_is_conflict(client: TestClient) -> None:
-    assert register_pending(client, "justin").status_code == 201
+def test_register_duplicate_verified_username_is_conflict(client: TestClient) -> None:
+    register(client, "justin")
     response = register_pending(client, "JUSTIN", email="other@example.test")
     assert response.status_code == 409
     assert "already taken" in response.json()["detail"].lower()
 
 
-def test_register_duplicate_email_is_conflict(client: TestClient) -> None:
-    assert register_pending(client, "alpha", email="same@example.test").status_code == 201
+def test_register_duplicate_verified_email_is_conflict(client: TestClient) -> None:
+    register(client, "alpha", email="same@example.test")
     response = register_pending(client, "bravo", email="same@example.test")
     assert response.status_code == 409
     assert "email" in response.json()["detail"].lower()
@@ -143,6 +143,45 @@ def test_verify_get_activates_account(client: TestClient) -> None:
         json={"username": "pat", "password": "password123"},
     )
     assert login.status_code == 200
+
+
+def test_send_verification_resends_for_unverified_user(client: TestClient) -> None:
+    pending = register_pending(client, "unverifiedsend", email="unverifiedsend@example.test")
+    assert pending.status_code == 201
+    blocked = client.post(
+        "/api/v1/auth/login",
+        json={"username": "unverifiedsend", "password": "password123"},
+    )
+    assert blocked.status_code == 403
+    sent = client.post(
+        "/api/v1/auth/send-verification",
+        json={"username": "unverifiedsend", "email": "unverifiedsend@example.test"},
+    )
+    assert sent.status_code == 200, sent.text
+    body = sent.json()
+    assert body["email"] == "unverifiedsend@example.test"
+    assert "email_sent" in body
+    token = body.get("verification_token")
+    assert token
+    assert client.post("/api/v1/auth/verify", json={"token": token}).status_code == 200
+    ok = client.post(
+        "/api/v1/auth/login",
+        json={"username": "unverifiedsend", "password": "password123"},
+    )
+    assert ok.status_code == 200
+
+
+def test_unverified_can_reregister_same_email(client: TestClient) -> None:
+    first = register_pending(client, "oldname", email="same.inbox@example.test")
+    assert first.status_code == 201
+    second = register_pending(client, "newname", email="same.inbox@example.test")
+    assert second.status_code == 201, second.text
+    sent = client.post(
+        "/api/v1/auth/send-verification",
+        json={"email": "same.inbox@example.test", "username": "newname"},
+    )
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["email"] == "same.inbox@example.test"
 
 
 def test_send_verification_alias_matches_resend(client: TestClient) -> None:

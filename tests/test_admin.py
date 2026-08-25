@@ -80,6 +80,41 @@ def test_admin_rename_flag_and_delete(client: TestClient) -> None:
     listed = client.get("/api/v1/admin/users", headers=headers)
     assert [row["username"] for row in listed.json()["users"]] == ["justinv"]
 
+    reused = register(
+        client,
+        "bobby",
+        email="bob@example.test",
+    )
+    assert reused["user"]["username"] == "bobby"
+
+
+def test_admin_delete_frees_email_and_username(client: TestClient) -> None:
+    admin = register(client, "justinv")
+    pending = register_pending(
+        client,
+        "reuse_me",
+        email="reuse.me@example.test",
+    )
+    assert pending.status_code == 201, pending.text
+    listed = client.get("/api/v1/admin/users", headers=auth(admin["access_token"]))
+    found = next(row for row in listed.json()["users"] if row["username"] == "reuse_me")
+    deleted = client.delete(
+        f"/api/v1/admin/users/{found['id']}",
+        headers=auth(admin["access_token"]),
+    )
+    assert deleted.status_code == 204, deleted.text
+    again = register_pending(
+        client,
+        "reuse_me",
+        email="reuse.me@example.test",
+    )
+    assert again.status_code == 201, again.text
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "justinv", "password": "password123"},
+    )
+    assert login.status_code == 200
+
 
 def test_admin_can_adjust_own_account(client: TestClient) -> None:
     admin = register(client, "justinv")

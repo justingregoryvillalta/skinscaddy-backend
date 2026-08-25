@@ -133,9 +133,10 @@ def create_user(
     """Create an unverified user with 100 welcome tokens. Returns (user, raw token)."""
     if is_reserved_username(username):
         raise UsernameTakenError("Username already taken.")
+    cleaned_email = normalize_email(email)
+    release_reusable_identities(db, username=username, email=cleaned_email)
     if get_user_by_username(db, username):
         raise UsernameTakenError("Username already taken.")
-    cleaned_email = normalize_email(email)
     if get_user_by_email(db, cleaned_email):
         raise EmailTakenError("An account with this email already exists.")
 
@@ -203,12 +204,20 @@ def verify_user_token(db: Session, raw_token: str) -> User:
     return user
 
 
+def _find_verification_user(
+    db: Session, *, email: str | None, username: str | None
+) -> User | None:
+    """Prefer an unverified match so Send verification resends instead of 404."""
+    by_email = get_user_by_email(db, email) if email else None
+    by_name = get_user_by_username(db, username) if username else None
+    for candidate in (by_email, by_name):
+        if candidate is not None and getattr(candidate, "is_verified", True) is False:
+            return candidate
+    return by_email or by_name
+
+
 def resend_verification(db: Session, *, email: str | None = None, username: str | None = None) -> tuple[User, str]:
-    user = None
-    if email:
-        user = get_user_by_email(db, email)
-    if user is None and username:
-        user = get_user_by_username(db, username)
+    user = _find_verification_user(db, email=email, username=username)
     if user is None:
         raise InvalidCredentialsError("No account found for that email or username.")
     if getattr(user, "is_verified", True):
@@ -553,17 +562,144 @@ def rename_user_by_id(db: Session, user_id: int, username: str) -> dict[str, Any
 def set_user_disabled(db: Session, user: User, disabled: bool) -> User:
     if is_admin_login_username(getattr(user, "username", "")) and disabled:
         raise AdminError("The admin login account cannot be flagged.")
+    if _is_protected_account(user) and disabled:
+        raise AdminError("The justinv account cannot be flagged.")
     user.is_disabled = bool(disabled)
     db.commit()
     db.refresh(user)
     return user
 
 
+def _table_names(db: Session) -> set[str]:
+    bind = db.get_bind()
+    if bind is None:
+        return set()
+    try:
+        return set(inspect(bind).get_table_names())
+    except Exception:
+        return set()
+
+
+def _exec_user_sql(db: Session, sql: str, user_id: int) -> None:
+    db.execute(text(sql), {"uid": int(user_id)})
+
+
+def purge_user_row(db: Session, user_id: int) -> None:
+    """Hard-delete a user and dependent rows so email/username can register again.
+
+    Live Postgres tables may lack ON DELETE CASCADE even when models declare it.
+    """
+    uid = int(user_id)
+    tables = _table_names(db)
+    nulls = (("photos", "consumed_by_id"),)
+    deletes = (
+        ("chat_messages", "user_id"),
+        ("chat_members", "user_id"),
+        ("chat_threads", "created_by_id"),
+        ("photo_recipients", "user_id"),
+        ("scramble_hole_scores", "posted_by_id"),
+        ("scramble_members", "user_id"),
+        ("challenge_players", "user_id"),
+        ("activity_events", "user_id"),
+        ("user_status", "user_id"),
+        ("friend_requests", "requester_id"),
+        ("friend_requests", "addressee_id"),
+        ("token_ledger", "user_id"),
+        ("photos", "sender_id"),
+        ("rounds", "user_id"),
+    )
+    for table, column in nulls:
+        if table in tables:
+            _exec_user_sql(
+                db,
+                f"UPDATE {table} SET {column} = NULL WHERE {column} = :uid",
+                uid,
+            )
+    if "challenges" in tables and "challenge_players" in tables:
+        _exec_user_sql(
+            db,
+            "DELETE FROM challenge_players WHERE challenge_id IN ("
+            "SELECT id FROM challenges WHERE creator_id = :uid"
+            " OR source_round_id IN (SELECT id FROM rounds WHERE user_id = :uid))",
+            uid,
+        )
+        _exec_user_sql(
+            db,
+            "DELETE FROM challenges WHERE creator_id = :uid"
+            " OR source_round_id IN (SELECT id FROM rounds WHERE user_id = :uid)",
+            uid,
+        )
+    if "scramble_rounds" in tables:
+        if "scramble_hole_scores" in tables:
+            _exec_user_sql(
+                db,
+                "DELETE FROM scramble_hole_scores WHERE scramble_id IN "
+                "(SELECT id FROM scramble_rounds WHERE host_id = :uid)",
+                uid,
+            )
+        if "scramble_members" in tables:
+            _exec_user_sql(
+                db,
+                "DELETE FROM scramble_members WHERE scramble_id IN "
+                "(SELECT id FROM scramble_rounds WHERE host_id = :uid)",
+                uid,
+            )
+        if "scramble_teams" in tables:
+            _exec_user_sql(
+                db,
+                "DELETE FROM scramble_teams WHERE scramble_id IN "
+                "(SELECT id FROM scramble_rounds WHERE host_id = :uid)",
+                uid,
+            )
+        _exec_user_sql(db, "DELETE FROM scramble_rounds WHERE host_id = :uid", uid)
+    for table, column in deletes:
+        if table in tables:
+            _exec_user_sql(db, f"DELETE FROM {table} WHERE {column} = :uid", uid)
+    _exec_user_sql(db, "DELETE FROM users WHERE id = :uid", uid)
+
+
+def _is_protected_account(user: User) -> bool:
+    name = str(getattr(user, "username", "") or "").strip().lower()
+    return name in {ADMIN_LOGIN_USERNAME, ADMIN_PASSWORD_SOURCE_USERNAME}
+
+
+def release_reusable_identities(db: Session, *, username: str, email: str) -> None:
+    """Drop leftover disabled/unverified rows so the same email/username can register."""
+    seen: set[int] = set()
+    candidates: list[User] = []
+    by_name = get_user_by_username(db, username)
+    by_email = get_user_by_email(db, email)
+    for user in (by_name, by_email):
+        if user is None or int(user.id) in seen:
+            continue
+        seen.add(int(user.id))
+        candidates.append(user)
+    changed = False
+    for user in candidates:
+        if _is_protected_account(user):
+            continue
+        reusable = bool(getattr(user, "is_disabled", False)) or (
+            getattr(user, "is_verified", True) is False
+        )
+        if not reusable:
+            continue
+        uid = int(user.id)
+        db.expunge(user)
+        purge_user_row(db, uid)
+        changed = True
+    if changed:
+        db.commit()
+
+
 def delete_user(db: Session, user: User) -> None:
     if is_admin_login_username(getattr(user, "username", "")):
         raise AdminError("The admin login account cannot be deleted.")
-    db.delete(user)
+    if _is_protected_account(user):
+        raise AdminError("The justinv account cannot be deleted.")
     try:
+        uid = int(user.id)
+        db.expunge(user)
+        purge_user_row(db, uid)
         db.commit()
     except IntegrityError as exc:
         db.rollback()

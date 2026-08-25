@@ -1,4 +1,8 @@
-"""Transactional email via SMTP (Render-friendly env vars)."""
+"""Transactional email via SMTP (Render-friendly env vars).
+
+Gmail: SMTP_PASSWORD must be a Gmail App Password. A normal account
+password is rejected with SMTP 535. Do not disable SMTP login to work around that.
+"""
 
 from __future__ import annotations
 
@@ -111,7 +115,14 @@ def send_verification_email(*, to_email: str, username: str, raw_token: str) -> 
         print(f"verification email sent to {dest} (@{username}) from {from_addr}", flush=True)
         return True, ""
     except Exception as exc:
-        err = f"SMTP send failed: {exc}"
+        detail = str(exc)
+        if "535" in detail:
+            err = (
+                "SMTP send failed: Gmail rejected the login (535). "
+                "SMTP_PASSWORD must be a Gmail App Password, not the Google account password."
+            )
+        else:
+            err = f"SMTP send failed: {exc}"
         print(f"verification email failed for @{username} → {dest}: {exc}", flush=True)
         print(f"verification URL: {link}", flush=True)
         return False, err
