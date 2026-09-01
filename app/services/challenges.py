@@ -363,15 +363,19 @@ def _require_challenge(db: Session, challenge_id: int) -> Challenge:
     return challenge
 
 
+def _challenge_ids_for_user(user_id: int):
+    return select(ChallengePlayer.challenge_id).where(
+        ChallengePlayer.user_id == int(user_id)
+    )
+
+
 def _query_for_user(db: Session, actor: User) -> list[Challenge]:
     return list(
         db.scalars(
             select(Challenge)
             .options(*_load_options())
-            .join(ChallengePlayer)
-            .where(ChallengePlayer.user_id == actor.id)
+            .where(Challenge.id.in_(_challenge_ids_for_user(actor.id)))
             .order_by(Challenge.created_at.desc(), Challenge.id.desc())
-            .distinct()
         ).all()
     )
 
@@ -396,13 +400,11 @@ def _refresh_user_open(db: Session, actor: User) -> None:
         db.scalars(
             select(Challenge)
             .options(*_load_options())
-            .join(ChallengePlayer)
             .where(
-                ChallengePlayer.user_id == actor.id,
-                Challenge.status.in_([ChallengeStatus.PENDING, ChallengeStatus.ACTIVE]),
+                Challenge.id.in_(_challenge_ids_for_user(actor.id)),
+                Challenge.status.in_((ChallengeStatus.PENDING, ChallengeStatus.ACTIVE)),
                 Challenge.deadline <= now,
             )
-            .distinct()
         ).all()
     )
     for challenge in open_rows:

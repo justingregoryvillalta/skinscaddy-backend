@@ -90,6 +90,27 @@ def _ensure_user_columns() -> None:
     _ensure_email_unique_index()
 
 
+def _ensure_chat_tables() -> None:
+    """Create chat tables if this database predates the chat routes.
+
+    ``create_all`` already adds missing tables and leaves existing ones
+    alone. This second pass is explicit so Render logs show whether
+    ``chat_threads`` / ``chat_members`` / ``chat_messages`` exist.
+    """
+    from app.models.chat import ChatMember, ChatMessage, ChatThread  # noqa: F401
+
+    needed = ("chat_threads", "chat_members", "chat_messages")
+    tables = [Base.metadata.tables[name] for name in needed if name in Base.metadata.tables]
+    if tables:
+        Base.metadata.create_all(bind=engine, tables=tables)
+    inspector = inspect(engine)
+    existing = set(inspector.get_table_names())
+    missing = [name for name in needed if name not in existing]
+    if missing:
+        raise RuntimeError(f"chat tables missing after create_all: {', '.join(missing)}")
+    print("chat tables ready", flush=True)
+
+
 def _ensure_email_unique_index() -> None:
     try:
         with engine.begin() as conn:
@@ -113,6 +134,7 @@ def init_db(*, retries: int = 8) -> None:
         try:
             Base.metadata.create_all(bind=engine)
             _ensure_user_columns()
+            _ensure_chat_tables()
             print(f"database ready ({engine.dialect.name})", flush=True)
             return
         except Exception as exc:

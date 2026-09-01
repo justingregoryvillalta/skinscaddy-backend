@@ -1,3 +1,4 @@
+from app.models.chat import ChatMember, ChatMessage, ChatMessageKind, ChatThread, ChatThreadKind
 from app.models.challenge import (
     Challenge,
     ChallengePlayer,
@@ -27,6 +28,11 @@ from app.models.user import User
 from app.models.wallet import TokenDirection, TokenLedger, TokenSource
 
 __all__ = [
+    "ChatMember",
+    "ChatMessage",
+    "ChatMessageKind",
+    "ChatThread",
+    "ChatThreadKind",
     "Challenge",
     "ChallengePlayer",
     "ChallengePlayerRole",
