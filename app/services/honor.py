@@ -609,8 +609,44 @@ def friends_board(db: Session, actor: User) -> dict[str, Any]:
     return {"season": current_season(), "entries": entries}
 
 
+_PLAY_LEDGER_SOURCES = (
+    TokenSource.BIRDIE,
+    TokenSource.EAGLE,
+    TokenSource.SKINS_WIN,
+    TokenSource.ROUND_COMPLETE_9,
+    TokenSource.ROUND_COMPLETE_18,
+    TokenSource.CHALLENGE_WIN,
+)
+
+
+def _stale_play_users(db: Session, *, cap: int = 80) -> list[User]:
+    """Players with honor-counting activity whose stored tally is still 0."""
+    play = union(
+        select(Round.user_id.label("uid")),
+        select(FriendRequest.requester_id.label("uid")).where(
+            FriendRequest.status == FriendRequestStatus.ACCEPTED
+        ),
+        select(FriendRequest.addressee_id.label("uid")).where(
+            FriendRequest.status == FriendRequestStatus.ACCEPTED
+        ),
+        select(Challenge.creator_id.label("uid")),
+        select(ChallengePlayer.user_id.label("uid")),
+        select(TokenLedger.user_id.label("uid")).where(
+            TokenLedger.direction == TokenDirection.CREDIT,
+            TokenLedger.source.in_(_PLAY_LEDGER_SOURCES),
+        ),
+    ).subquery()
+    filters = [User.id.in_(select(play.c.uid)), User.honor_tally == 0]
+    if hasattr(User, "is_disabled"):
+        filters.append(User.is_disabled.is_(False))
+    return list(db.scalars(select(User).where(*filters).limit(max(1, cap))).all())
+
+
 def hot_list(db: Session, *, limit: int = 25) -> dict[str, Any]:
     n = max(1, min(int(limit or 25), 50))
+    stale = _stale_play_users(db, cap=max(n * 4, 40))
+    if stale:
+        _recompute_users(db, stale)
     filters = [User.honor_tally > 0]
     if hasattr(User, "is_disabled"):
         filters.append(User.is_disabled.is_(False))

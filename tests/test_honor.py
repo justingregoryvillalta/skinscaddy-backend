@@ -165,6 +165,32 @@ def test_play_credit_updates_honor_without_sync(client: TestClient) -> None:
     assert body["stats"]["skins_taken"] >= 1
 
 
+def test_welcome_bonus_does_not_put_user_on_hot_list(client: TestClient) -> None:
+    register(client, "alice")
+    hot = client.get("/api/v1/honor/hot")
+    assert hot.status_code == 200
+    assert hot.json()["entries"] == []
+
+
+def test_hot_list_backfills_zero_tally_from_play(client: TestClient, db_session) -> None:
+    from sqlalchemy import select
+
+    from app.models.user import User
+    from tests.test_challenges import add_round
+
+    alice = register(client, "alice")
+    add_round(client, alice["access_token"])
+    row = db_session.scalar(select(User).where(User.username == "alice"))
+    assert row is not None
+    row.honor_tally = 0
+    db_session.add(row)
+    db_session.commit()
+    hot = client.get("/api/v1/honor/hot")
+    assert hot.status_code == 200
+    names = [entry["username"] for entry in hot.json()["entries"]]
+    assert "alice" in names
+
+
 def test_friends_board_recomputes_peer_play(client: TestClient) -> None:
     alice = register(client, "alice")
     bob = register(client, "bob")

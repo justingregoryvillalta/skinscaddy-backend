@@ -29,7 +29,7 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     application = FastAPI(
         title=settings.APP_NAME,
-        version="0.1.11",
+        version="0.1.12",
         description="SkinsCaddy backend — accounts, friends, chats, wallet, challenges, feed, photos, scramble, and admin.",
         lifespan=lifespan,
     )
@@ -68,5 +68,5 @@ def health() -> dict:
             "/api/v1/honor/hot",
         ],
         "mail_configured": smtp_configured(),
-        "version": "0.1.11",
+        "version": "0.1.12",
     }
