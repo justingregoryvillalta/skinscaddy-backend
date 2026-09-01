@@ -569,10 +569,26 @@ def recompute_and_save(
     )
 
 
+def _recompute_users(db: Session, users: list[User]) -> list[User]:
+    fresh: list[User] = []
+    seen: set[int] = set()
+    for row in users:
+        if row is None or row.id in seen:
+            continue
+        seen.add(row.id)
+        try:
+            recompute_and_save(db, row)
+            db.refresh(row)
+        except Exception:
+            pass
+        fresh.append(row)
+    return fresh
+
+
 def friends_board(db: Session, actor: User) -> dict[str, Any]:
-    recompute_and_save(db, actor)
     ids = [actor.id] + _friend_ids(db, actor.id)
     rows = list(db.scalars(select(User).where(User.id.in_(ids))).all())
+    rows = _recompute_users(db, rows)
     ordered = sorted(
         rows,
         key=lambda u: (-int(getattr(u, "honor_tally", 0) or 0), (u.username or "").lower()),
@@ -605,6 +621,11 @@ def hot_list(db: Session, *, limit: int = 25) -> dict[str, Any]:
             .order_by(User.honor_tally.desc(), func.lower(User.username).asc())
             .limit(n)
         ).all()
+    )
+    rows = _recompute_users(db, rows)
+    rows = sorted(
+        rows,
+        key=lambda u: (-int(getattr(u, "honor_tally", 0) or 0), (u.username or "").lower()),
     )
     entries = []
     for i, row in enumerate(rows, start=1):

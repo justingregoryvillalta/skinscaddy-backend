@@ -22,7 +22,7 @@ SOURCE_LABELS: dict[TokenSource, str] = {
     TokenSource.EAGLE: "Eagle",
     TokenSource.SKINS_WIN: "Won a skin",
     TokenSource.CHALLENGE_WIN: "Won a challenge",
-    TokenSource.WAGER: "Wager",
+    TokenSource.WAGER: "Chips",
     TokenSource.FORFEIT: "Forfeit",
     TokenSource.PURCHASE: "Purchase",
     TokenSource.ADJUSTMENT: "Adjustment",
@@ -169,10 +169,37 @@ def _apply(
         db.commit()
         db.refresh(entry)
         db.refresh(locked)
+        _refresh_honor_after_play_credit(db, locked, source)
     else:
         db.flush()
     user.token_balance = locked.token_balance
     return entry
+
+
+_HONOR_CREDIT_SOURCES = frozenset(
+    {
+        TokenSource.BIRDIE,
+        TokenSource.EAGLE,
+        TokenSource.SKINS_WIN,
+        TokenSource.ROUND_COMPLETE_9,
+        TokenSource.ROUND_COMPLETE_18,
+        TokenSource.CHALLENGE_WIN,
+    }
+)
+
+
+def _refresh_honor_after_play_credit(
+    db: Session, user: User, source: TokenSource
+) -> None:
+    """Keep Honor Board / Hot List in step with skins, birdies, and play awards."""
+    if source not in _HONOR_CREDIT_SOURCES:
+        return
+    try:
+        from app.services.honor import recompute_and_save
+
+        recompute_and_save(db, user)
+    except Exception:
+        pass
 
 
 def credit_tokens(

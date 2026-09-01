@@ -144,3 +144,42 @@ def test_honor_friends_board_order_and_hot_public(client: TestClient) -> None:
     for key in ("season", "stats", "tags", "earned_count", "tag_total", "tally"):
         assert key in snap
     assert "rank_friends" in snap
+
+
+def test_play_credit_updates_honor_without_sync(client: TestClient) -> None:
+    alice = register(client, "alice")
+    credited = client.post(
+        "/api/v1/wallet/credit",
+        headers=auth(alice["access_token"]),
+        json={"amount": 25, "source": "skins_win", "reason": "Won a skin"},
+    )
+    assert credited.status_code == 201, credited.text
+    hot = client.get("/api/v1/honor/hot")
+    assert hot.status_code == 200
+    names = [row["username"] for row in hot.json()["entries"]]
+    assert "alice" in names
+    own = client.get("/api/v1/honor", headers=auth(alice["access_token"]))
+    assert own.status_code == 200
+    body = own.json()
+    assert body["tally"] >= 1
+    assert body["stats"]["skins_taken"] >= 1
+
+
+def test_friends_board_recomputes_peer_play(client: TestClient) -> None:
+    alice = register(client, "alice")
+    bob = register(client, "bob")
+    _befriend(client, alice, bob)
+    credited = client.post(
+        "/api/v1/wallet/credit",
+        headers=auth(bob["access_token"]),
+        json={"amount": 15, "source": "birdie", "reason": "Birdie"},
+    )
+    assert credited.status_code == 201, credited.text
+    friends = client.get(
+        "/api/v1/honor/friends",
+        headers=auth(alice["access_token"]),
+    )
+    assert friends.status_code == 200, friends.text
+    bob_row = next(row for row in friends.json()["entries"] if row["username"] == "bob")
+    assert bob_row["tally"] >= 1
+    assert bob_row["regular_metal"]
