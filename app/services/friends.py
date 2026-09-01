@@ -153,7 +153,17 @@ def accept_friend_request(db: Session, actor: User, request_id: int) -> FriendRe
 
     db.commit()
     db.refresh(request)
-    return _get_request(db, request.id) or request
+    loaded = _get_request(db, request.id) or request
+    try:
+        from app.services.honor import recompute_and_save
+
+        for uid in (loaded.requester_id, loaded.addressee_id):
+            other = db.get(User, uid)
+            if other is not None:
+                recompute_and_save(db, other)
+    except Exception:
+        pass
+    return loaded
 
 
 def decline_friend_request(db: Session, actor: User, request_id: int) -> FriendRequest:

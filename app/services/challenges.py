@@ -169,6 +169,14 @@ def create_challenge(
     db.commit()
     loaded = get_challenge(db, challenge.id)
     assert loaded is not None
+    try:
+        from app.services.honor import recompute_and_save
+
+        recompute_and_save(db, actor)
+        for opp in opponents:
+            recompute_and_save(db, opp)
+    except Exception:
+        pass
     return loaded
 
 

@@ -81,6 +81,22 @@ def _ensure_user_columns() -> None:
             statements.append(
                 "ALTER TABLE users ADD COLUMN is_verified BOOLEAN NOT NULL DEFAULT 1"
             )
+    if "honor_tally" not in columns:
+        statements.append(
+            "ALTER TABLE users ADD COLUMN honor_tally INTEGER NOT NULL DEFAULT 0"
+        )
+    if "honor_skins" not in columns:
+        statements.append(
+            "ALTER TABLE users ADD COLUMN honor_skins INTEGER NOT NULL DEFAULT 0"
+        )
+    if "honor_birdies" not in columns:
+        statements.append(
+            "ALTER TABLE users ADD COLUMN honor_birdies INTEGER NOT NULL DEFAULT 0"
+        )
+    if "honor_tags" not in columns:
+        statements.append("ALTER TABLE users ADD COLUMN honor_tags JSON")
+    if "honor_updated_at" not in columns:
+        statements.append("ALTER TABLE users ADD COLUMN honor_updated_at TIMESTAMP")
     if not statements:
         _ensure_email_unique_index()
         return

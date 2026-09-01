@@ -41,6 +41,12 @@ def create_round(
     db.add(record)
     db.commit()
     db.refresh(record)
+    try:
+        from app.services.honor import recompute_and_save
+
+        recompute_and_save(db, actor)
+    except Exception:
+        pass
     return get_round(db, record.id) or record
 
 

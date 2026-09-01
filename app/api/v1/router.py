@@ -7,6 +7,7 @@ from app.api.v1 import (
     chats,
     feed,
     friends,
+    honor,
     photos,
     rounds,
     scrambles,
@@ -19,6 +20,7 @@ api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(admin.router)
 api_router.include_router(friends.router)
+api_router.include_router(honor.router)
 api_router.include_router(chats.router)
 api_router.include_router(wallet.router)
 api_router.include_router(rounds.router)
