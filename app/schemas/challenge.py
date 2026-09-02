@@ -36,6 +36,12 @@ class CreateChallengeRequest(BaseModel):
         return cleaned
 
 
+class JoinRoundRequest(BaseModel):
+    round_id: int
+    wager_amount: int = Field(ge=0, le=1_000_000)
+    weeks: int = Field(ge=1, le=4)
+
+
 class SubmitChallengeScoresRequest(BaseModel):
     strokes: int | None = Field(default=None, ge=1, le=15)
     scores: list[int] | None = None

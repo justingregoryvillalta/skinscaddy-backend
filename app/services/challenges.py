@@ -16,7 +16,7 @@ from app.models.challenge import (
 from app.models.user import User
 from app.models.wallet import TokenSource
 from app.services.friends import UserNotFoundError, are_friends
-from app.services.rounds import get_owned_round
+from app.services.rounds import RoundNotFoundError, get_owned_round, get_round
 from app.services.users import get_user_by_id, get_user_by_username
 from app.models.status import ActivityKind
 from app.services.feed import record_activity
@@ -177,6 +177,92 @@ def create_challenge(
             recompute_and_save(db, opp)
     except Exception:
         pass
+    return loaded
+
+
+def join_round_challenge(
+    db: Session,
+    actor: User,
+    *,
+    round_id: int,
+    wager_amount: int,
+    weeks: int,
+) -> Challenge:
+    """Used by POST /challenges/join-round (already imported from the API)."""
+    source = get_round(db, round_id)
+    if source is None:
+        raise RoundNotFoundError("Round not found.")
+    if source.user_id == actor.id:
+        raise ChallengeStateError("You cannot join your own round.")
+    owner = source.user or get_user_by_id(db, source.user_id)
+    if owner is None:
+        raise ChallengeStateError("Round owner is missing.")
+    if not are_friends(db, actor.id, owner.id):
+        raise NotFriendsError(f"@{owner.username} is not on your friends list.")
+    if len(list(source.scores or [])) < int(source.num_holes):
+        raise ChallengeStateError("That round is incomplete.")
+
+    amount = int(wager_amount)
+    if amount > 0:
+        if int(owner.token_balance) < amount:
+            raise InsufficientTokensError("Host no longer has enough tokens for this wager.")
+        if int(actor.token_balance) < amount:
+            raise InsufficientTokensError("You do not have enough tokens for this wager.")
+
+    now = _now()
+    challenge = Challenge(
+        creator_id=owner.id,
+        source_round_id=source.id,
+        course_name=source.course_name,
+        num_holes=source.num_holes,
+        wager_amount=amount,
+        duration_weeks=weeks,
+        deadline=now + timedelta(weeks=weeks),
+        status=ChallengeStatus.ACTIVE,
+        pot_amount=0,
+    )
+    db.add(challenge)
+    db.flush()
+
+    host_scores = [int(s) for s in source.scores]
+    db.add(
+        ChallengePlayer(
+            challenge_id=challenge.id,
+            user_id=owner.id,
+            role=ChallengePlayerRole.HOST,
+            status=ChallengePlayerStatus.COMPLETED,
+            scores=host_scores,
+            total=int(source.total),
+            escrowed=False,
+            escrow_amount=0,
+            finished_at=now,
+        )
+    )
+    db.add(
+        ChallengePlayer(
+            challenge_id=challenge.id,
+            user_id=actor.id,
+            role=ChallengePlayerRole.OPPONENT,
+            status=ChallengePlayerStatus.ACCEPTED,
+            scores=[],
+            total=None,
+            escrowed=False,
+            escrow_amount=0,
+            accepted_at=now,
+        )
+    )
+    db.flush()
+
+    loaded = get_challenge(db, challenge.id)
+    assert loaded is not None
+    host = next(p for p in loaded.players if p.role == ChallengePlayerRole.HOST)
+    opponent = next(p for p in loaded.players if p.role == ChallengePlayerRole.OPPONENT)
+    if amount > 0:
+        _escrow_player(db, loaded, host)
+        _escrow_player(db, loaded, opponent)
+    db.commit()
+    loaded = get_challenge(db, challenge.id)
+    assert loaded is not None
     return loaded
 
 
