@@ -197,3 +197,25 @@ def test_list_my_scrambles(client: TestClient) -> None:
     bob_list = client.get("/api/v1/scrambles", headers=auth(bob["access_token"]))
     assert len(bob_list.json()["scrambles"]) == 1
     assert bob_list.json()["scrambles"][0]["join_code"] == created["join_code"]
+
+
+def test_list_scrambles_empty_is_200_array(client: TestClient) -> None:
+    bob = register(client, "nobody")
+    empty = client.get("/api/v1/scrambles", headers=auth(bob["access_token"]))
+    assert empty.status_code == 200, empty.text
+    assert empty.json()["scrambles"] == []
+
+
+def test_list_my_scrambles_sql_avoids_distinct_on_json() -> None:
+    """Postgres rejects DISTINCT over json columns (pars / skin_results)."""
+    from sqlalchemy.dialects import postgresql
+
+    from app.services.scrambles import list_my_scrambles_statement
+
+    sql = str(
+        list_my_scrambles_statement(1).compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    ).upper()
+    assert "DISTINCT" not in sql

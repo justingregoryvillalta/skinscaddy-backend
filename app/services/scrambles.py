@@ -302,17 +302,19 @@ def post_score(
     return loaded
 
 
-def list_my_scrambles(db: Session, actor: User) -> list[ScrambleRound]:
-    return list(
-        db.scalars(
-            select(ScrambleRound)
-            .options(*_load_options())
-            .join(ScrambleMember)
-            .where(ScrambleMember.user_id == actor.id)
-            .order_by(ScrambleRound.updated_at.desc(), ScrambleRound.id.desc())
-            .distinct()
-        ).all()
+def list_my_scrambles_statement(user_id: int):
+    """Membership subquery — never SELECT DISTINCT on JSON columns (Postgres 500)."""
+    member_ids = select(ScrambleMember.scramble_id).where(ScrambleMember.user_id == user_id)
+    return (
+        select(ScrambleRound)
+        .options(*_load_options())
+        .where(ScrambleRound.id.in_(member_ids))
+        .order_by(ScrambleRound.updated_at.desc(), ScrambleRound.id.desc())
     )
+
+
+def list_my_scrambles(db: Session, actor: User) -> list[ScrambleRound]:
+    return list(db.scalars(list_my_scrambles_statement(actor.id)).all())
 
 
 def get_visible_scramble(db: Session, actor: User, scramble_id: int) -> ScrambleRound:
