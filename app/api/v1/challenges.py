@@ -13,6 +13,7 @@ from app.schemas.challenge import (
     ChallengeListResponse,
     ChallengePublic,
     CreateChallengeRequest,
+    JoinRoundRequest,
     SubmitChallengeScoresRequest,
 )
 from app.services.challenges import (
@@ -24,6 +25,7 @@ from app.services.challenges import (
     create_challenge,
     decline_challenge,
     get_visible_challenge,
+    join_round_challenge,
     list_history,
     list_incoming,
     list_outgoing,
@@ -31,6 +33,7 @@ from app.services.challenges import (
     submit_scores,
 )
 from app.services.friends import UserNotFoundError
+from app.services.push import notify_challenge_event
 from app.services.rounds import RoundForbiddenError, RoundNotFoundError
 from app.services.wallet import InsufficientTokensError
 
@@ -110,6 +113,59 @@ def post_challenge(
         InsufficientTokensError,
     ) as exc:
         raise _http_error(exc) from exc
+    try:
+        opp_ids = [
+            int(p.user_id)
+            for p in challenge.players
+            if int(p.user_id) != int(current_user.id)
+        ]
+        notify_challenge_event(
+            db,
+            recipient_ids=opp_ids,
+            title="Challenge",
+            body=f"@{current_user.username} challenged you",
+            challenge_id=int(challenge.id),
+        )
+    except Exception:
+        pass
+    return _public(challenge)
+
+
+@router.post("/join-round", response_model=ChallengePublic, status_code=status.HTTP_201_CREATED)
+def join_round(
+    body: JoinRoundRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ChallengePublic:
+    try:
+        challenge = join_round_challenge(
+            db,
+            current_user,
+            round_id=body.round_id,
+            wager_amount=body.wager_amount,
+            weeks=body.weeks,
+        )
+    except (
+        UserNotFoundError,
+        NotFriendsError,
+        ChallengeStateError,
+        RoundNotFoundError,
+        RoundForbiddenError,
+        InsufficientTokensError,
+    ) as exc:
+        raise _http_error(exc) from exc
+    try:
+        host_id = int(challenge.creator_id)
+        if host_id != int(current_user.id):
+            notify_challenge_event(
+                db,
+                recipient_ids=[host_id],
+                title="Side game",
+                body=f"@{current_user.username} joined your round",
+                challenge_id=int(challenge.id),
+            )
+    except Exception:
+        pass
     return _public(challenge)
 
 
@@ -141,6 +197,21 @@ def accept(
         InsufficientTokensError,
     ) as exc:
         raise _http_error(exc) from exc
+    try:
+        others = [
+            int(p.user_id)
+            for p in challenge.players
+            if int(p.user_id) != int(current_user.id)
+        ]
+        notify_challenge_event(
+            db,
+            recipient_ids=others,
+            title="Side game",
+            body=f"@{current_user.username} accepted",
+            challenge_id=int(challenge.id),
+        )
+    except Exception:
+        pass
     return _public(challenge)
 
 
@@ -158,6 +229,21 @@ def decline(
         ChallengeStateError,
     ) as exc:
         raise _http_error(exc) from exc
+    try:
+        others = [
+            int(p.user_id)
+            for p in challenge.players
+            if int(p.user_id) != int(current_user.id)
+        ]
+        notify_challenge_event(
+            db,
+            recipient_ids=others,
+            title="Side game",
+            body=f"@{current_user.username} declined",
+            challenge_id=int(challenge.id),
+        )
+    except Exception:
+        pass
     return _public(challenge)
 
 
@@ -195,4 +281,19 @@ def settle(
         challenge = settle_challenge(db, current_user, challenge_id)
     except (ChallengeNotFoundError, ChallengeForbiddenError) as exc:
         raise _http_error(exc) from exc
+    try:
+        others = [
+            int(p.user_id)
+            for p in challenge.players
+            if int(p.user_id) != int(current_user.id)
+        ]
+        notify_challenge_event(
+            db,
+            recipient_ids=others,
+            title="Side game",
+            body=f"@{current_user.username} settled a side game",
+            challenge_id=int(challenge.id),
+        )
+    except Exception:
+        pass
     return _public(challenge)

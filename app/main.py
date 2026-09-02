@@ -29,8 +29,8 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     application = FastAPI(
         title=settings.APP_NAME,
-        version="0.1.12",
-        description="SkinsCaddy backend — accounts, friends, chats, wallet, challenges, feed, photos, scramble, and admin.",
+        version="0.1.13",
+        description="SkinsCaddy backend — accounts, friends, chats, wallet, challenges, feed, photos, scramble, push, and admin.",
         lifespan=lifespan,
     )
     origins = settings.cors_origin_list
@@ -48,6 +48,15 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
+def _push_configured() -> bool:
+    try:
+        from app.services.push import fcm_configured
+
+        return fcm_configured()
+    except Exception:
+        return False
+
+
 @app.get("/health")
 def health() -> dict:
     from app.services.email import smtp_configured
@@ -61,6 +70,7 @@ def health() -> dict:
         "admin": True,
         "chats": True,
         "honor": True,
+        "push": True,
         "honor_routes": [
             "/api/v1/honor",
             "/api/v1/honor/sync",
@@ -68,5 +78,6 @@ def health() -> dict:
             "/api/v1/honor/hot",
         ],
         "mail_configured": smtp_configured(),
-        "version": "0.1.12",
+        "push_configured": _push_configured(),
+        "version": "0.1.13",
     }

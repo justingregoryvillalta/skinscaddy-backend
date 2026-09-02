@@ -16,6 +16,7 @@ from app.schemas.friend import (
     SendFriendRequest,
 )
 from app.schemas.user import UserPublic
+from app.services.push import notify_friend_request
 from app.services.friends import (
     AlreadyFriendsError,
     DuplicateFriendRequestError,
@@ -108,6 +109,14 @@ def create_friend_request(
         AlreadyFriendsError,
     ) as exc:
         raise _http_error(exc) from exc
+    try:
+        notify_friend_request(
+            db,
+            addressee_id=int(request.addressee_id),
+            from_name=str(current_user.username),
+        )
+    except Exception:
+        pass
     return FriendRequestPublic.model_validate(request)
 
 

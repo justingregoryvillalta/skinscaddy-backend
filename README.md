@@ -204,6 +204,59 @@ curl -s http://127.0.0.1:8000/api/v1/challenges \
 
 Statuses: `pending`, `active`, `completed`, `expired`, `forfeited`. `POST /challenges/{id}/settle` applies a missed deadline (also runs automatically on read/accept/score).
 
+## Push notifications (FCM)
+
+Android lock-screen / home-screen pings when the app is backgrounded or killed. The web PWA is unchanged.
+
+After login the Kivy app `POST`s the install's FCM token:
+
+```
+POST /api/v1/devices/fcm
+Authorization: Bearer <jwt>
+{"token":"<fcm-registration-token>","platform":"android"}
+
+DELETE /api/v1/devices/fcm?token=<fcm-registration-token>
+```
+
+The API stores one row per token (reassigned if another account logs in on the same phone) and sends FCM on:
+
+- chat message (other members)
+- added to a group chat
+- incoming friend request
+- challenge created / accepted / declined
+- friend joined your round (side game)
+- side game settled
+
+Bodies are a short title + one line. No wallet balances, no scores.
+
+If FCM is unset or the send fails, the original POST still returns 201/200.
+
+### Render env vars (skinscaddy-api)
+
+Set in the Render dashboard (Blueprint keys are `sync: false` so they are not stored in git):
+
+| Variable | Required | What |
+|---|---|---|
+| `FCM_SERVER_KEY` | one of these | Firebase Console → Project settings → Cloud Messaging → Cloud Messaging API (Legacy) **server key** |
+| `FCM_SERVICE_ACCOUNT_JSON` | one of these | Entire Firebase **service account JSON** as one line (HTTP v1). Preferred if Legacy is disabled. |
+| `FCM_PROJECT_ID` | optional | Firebase project id. Inferred from the service-account JSON when omitted. |
+
+Leave them empty in local `.env` until you are testing two Android phones.
+
+Do not commit `FCM_SERVER_KEY`, service-account JSON, `*.deb`, or `android/google-services.json`.
+
+### Test user A vs B on Android
+
+1. Firebase Console: add Android app `com.skinscaddy.app`, download `google-services.json` to `android/google-services.json` (gitignored).
+2. Set `FCM_SERVER_KEY` and/or `FCM_SERVICE_ACCOUNT_JSON` on Render. Redeploy `skinscaddy-api`.
+3. Rebuild/install the APK on two phones. Sign in as **A** on phone 1, **B** on phone 2 (friends).
+4. Background or force-stop B's app (not just the recents thumbnail — swipe away / force stop).
+5. From A: send B a chat, a friend request, or a challenge.
+6. B should get a system notification on lock/home. Tap opens that chat, the Side Games screen, or Alerts.
+7. Confirm A's chat POST still succeeds if you temporarily clear `FCM_SERVER_KEY` on Render.
+
+Desktop `--preview` does not get FCM; that is Android-only.
+
 ## Live status / friends feed
 
 JWT required. The Kivy home ticker and Friends Live section should poll `GET /api/v1/feed`.

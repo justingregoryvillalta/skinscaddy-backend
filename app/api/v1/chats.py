@@ -35,6 +35,7 @@ from app.services.chat import (
     list_threads,
     send_message,
 )
+from app.services.push import notify_chat
 from app.services.rounds import RoundForbiddenError, RoundNotFoundError
 
 router = APIRouter(prefix="/chats", tags=["chats"])
@@ -125,6 +126,19 @@ def post_group_chat(
         )
     except ChatError as exc:
         raise _http_error(exc) from exc
+    try:
+        member_ids = [int(m.user_id) for m in thread.members]
+        notify_chat(
+            db,
+            actor_id=int(current_user.id),
+            actor_name=str(current_user.username),
+            member_ids=member_ids,
+            thread_id=int(thread.id),
+            text=f"added you to {thread.title or 'a group chat'}",
+            kind="text",
+        )
+    except Exception:
+        pass
     return _thread_public(db, thread)
 
 
@@ -152,6 +166,24 @@ def post_chat_member(
         thread = add_group_member(db, current_user, thread_id, body.username)
     except ChatError as exc:
         raise _http_error(exc) from exc
+    try:
+        want = (body.username or "").strip().lstrip("@").lower()
+        added_ids = [
+            int(m.user_id)
+            for m in thread.members
+            if m.user is not None and str(m.user.username).lower() == want
+        ]
+        notify_chat(
+            db,
+            actor_id=int(current_user.id),
+            actor_name=str(current_user.username),
+            member_ids=[int(current_user.id), *added_ids],
+            thread_id=int(thread.id),
+            text=f"added you to {thread.title or 'a group chat'}",
+            kind="text",
+        )
+    except Exception:
+        pass
     return _thread_public(db, thread)
 
 
@@ -192,4 +224,18 @@ def post_chat_message(
         )
     except (ChatError, RoundNotFoundError, RoundForbiddenError) as exc:
         raise _http_error(exc) from exc
+    try:
+        thread = get_thread_for_member(db, current_user, thread_id)
+        kind = str(row.kind.value if hasattr(row.kind, "value") else row.kind)
+        notify_chat(
+            db,
+            actor_id=int(current_user.id),
+            actor_name=str(current_user.username),
+            member_ids=[int(m.user_id) for m in thread.members],
+            thread_id=int(thread_id),
+            text=str(row.text or ""),
+            kind=kind,
+        )
+    except Exception:
+        pass
     return _message_public(row)

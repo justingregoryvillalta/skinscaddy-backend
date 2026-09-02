@@ -18,3 +18,5 @@ python-dotenv>=1.0.1
 # Auth
 PyJWT>=2.10.0
 bcrypt>=4.2.0
+# RS256 for FCM HTTP v1 (optional if only FCM_SERVER_KEY is set)
+cryptography>=43.0.0

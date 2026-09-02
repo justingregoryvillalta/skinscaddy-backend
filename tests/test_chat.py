@@ -155,8 +155,10 @@ def test_openapi_includes_chat_routes(client: TestClient) -> None:
     paths = spec.get("paths") or {}
     assert "/api/v1/chats" in paths
     assert "/api/v1/chats/direct" in paths
-    assert spec["info"]["version"] == "0.1.6"
+    assert spec["info"]["version"] == "0.1.13"
     health = client.get("/health").json()
     assert health.get("chats") is True
-    assert health.get("version") == "0.1.6"
+    assert health.get("push") is True
+    assert health.get("version") == "0.1.13"
+    assert "/api/v1/devices/fcm" in paths
 

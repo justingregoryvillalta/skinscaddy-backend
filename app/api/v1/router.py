@@ -5,6 +5,7 @@ from app.api.v1 import (
     auth,
     challenges,
     chats,
+    devices,
     feed,
     friends,
     honor,
@@ -20,6 +21,7 @@ api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(admin.router)
 api_router.include_router(friends.router)
+api_router.include_router(devices.router)
 api_router.include_router(honor.router)
 api_router.include_router(chats.router)
 api_router.include_router(wallet.router)

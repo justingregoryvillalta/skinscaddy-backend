@@ -1,4 +1,5 @@
 from app.models.chat import ChatMember, ChatMessage, ChatMessageKind, ChatThread, ChatThreadKind
+from app.models.device import DeviceToken
 from app.models.challenge import (
     Challenge,
     ChallengePlayer,
@@ -28,6 +29,7 @@ from app.models.user import User
 from app.models.wallet import TokenDirection, TokenLedger, TokenSource
 
 __all__ = [
+    "DeviceToken",
     "ChatMember",
     "ChatMessage",
     "ChatMessageKind",

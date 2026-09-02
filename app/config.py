@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     SMTP_USE_TLS: bool = True
     SMTP_USE_SSL: bool = False
     VERIFICATION_HOURS: int = 48
+    # FCM: legacy server key and/or HTTP v1 service-account JSON (Render dashboard).
+    # Never commit real values. Chat/friend/challenge routes still succeed if unset.
+    FCM_SERVER_KEY: str = ""
+    FCM_PROJECT_ID: str = ""
+    FCM_SERVICE_ACCOUNT_JSON: str = ""
 
     @property
     def photo_dir(self) -> Path:
