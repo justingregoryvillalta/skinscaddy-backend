@@ -22,6 +22,7 @@ from app.services.signup_profile import (
     parse_profile,
     validate_answers,
 )
+from app.legal import LEGAL_VERSION
 from app.services.wallet import WELCOME_BONUS, credit_tokens
 
 ADMIN_LOGIN_USERNAME = "admin"
@@ -150,6 +151,8 @@ def create_user(
     last_name: str,
     email: str,
     postal_code: str,
+    accept_tos: bool = False,
+    tos_version: str | None = None,
 ) -> tuple[User, str]:
     """Create an unverified user with 100 welcome tokens. Returns (user, raw token)."""
     if is_reserved_username(username):
@@ -171,6 +174,8 @@ def create_user(
         token_balance=WELCOME_BONUS,
         is_disabled=False,
         is_verified=False,
+        tos_version=(tos_version or LEGAL_VERSION) if accept_tos else None,
+        tos_accepted_at=datetime.now(timezone.utc) if accept_tos else None,
     )
     raw_token = issue_verification_token(user)
     db.add(user)
@@ -199,6 +204,15 @@ def create_user(
         db.commit()
         db.refresh(user)
     return user, raw_token
+
+
+def accept_tos(db: Session, user: User, version: str) -> User:
+    cleaned = (version or "").strip() or LEGAL_VERSION
+    user.tos_version = cleaned[:16]
+    user.tos_accepted_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 def verify_user_token(db: Session, raw_token: str) -> User:

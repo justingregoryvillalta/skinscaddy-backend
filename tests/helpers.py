@@ -15,6 +15,8 @@ def register_payload(
         "last_name": "User",
         "email": f"{username.lower()}@example.test",
         "postal_code": "M5V 1A1",
+        "accept_tos": True,
+        "tos_version": "2026-09-04",
     }
     data.update(overrides)
     return data

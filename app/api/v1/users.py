@@ -9,6 +9,7 @@ from app.api.deps import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import (
+    AcceptTosRequest,
     FirstSkinsTopupRequest,
     FirstSkinsTopupResponse,
     SignupProfileRequest,
@@ -16,7 +17,11 @@ from app.schemas.user import (
     UserPublic,
 )
 from app.services.signup_profile import SignupProfileError, parse_profile
-from app.services.users import apply_first_skins_topup, save_signup_profile
+from app.services.users import (
+    accept_tos,
+    apply_first_skins_topup,
+    save_signup_profile,
+)
 
 router = APIRouter(tags=["users"])
 
@@ -24,6 +29,15 @@ router = APIRouter(tags=["users"])
 @router.get("/me", response_model=UserPublic)
 def read_me(current_user: Annotated[User, Depends(get_current_user)]) -> User:
     return current_user
+
+
+@router.post("/me/tos", response_model=UserPublic)
+def post_tos(
+    body: AcceptTosRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    return accept_tos(db, current_user, body.tos_version)
 
 
 @router.get("/protected")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.user import UserPublic
 
@@ -28,6 +28,8 @@ class RegisterRequest(BaseModel):
     last_name: str = Field(min_length=1, max_length=50)
     email: str = Field(min_length=5, max_length=254)
     postal_code: str = Field(min_length=3, max_length=16)
+    accept_tos: bool = False
+    tos_version: str | None = Field(default=None, max_length=16)
 
     @field_validator("username")
     @classmethod
@@ -73,6 +75,20 @@ class RegisterRequest(BaseModel):
         if not _POSTAL_RE.fullmatch(postal):
             raise ValueError("Enter a valid postal or ZIP code.")
         return postal
+
+    @field_validator("tos_version")
+    @classmethod
+    def empty_tos_to_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def require_tos(self) -> "RegisterRequest":
+        if not self.accept_tos:
+            raise ValueError("You must agree to Terms and Privacy.")
+        return self
 
     # Optional quiz answers — credited on the new account without logging in.
     play_intent: str | None = Field(default=None, max_length=16)

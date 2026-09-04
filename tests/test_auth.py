@@ -77,6 +77,30 @@ def test_login_success(client: TestClient) -> None:
     assert body["user"]["username"] == "justin"
 
 
+def test_register_requires_tos_agreement(client: TestClient) -> None:
+    from tests.helpers import register_payload
+
+    blocked = client.post(
+        "/api/v1/auth/register",
+        json=register_payload("notos", accept_tos=False),
+    )
+    assert blocked.status_code == 422
+
+
+def test_register_stores_tos_and_login_without_tos_still_works(client: TestClient) -> None:
+    body = register(client, "tosuser")
+    user = body["user"]
+    assert user["tos_version"] == "2026-09-04"
+    assert user["tos_accepted_at"]
+    later = client.post(
+        "/api/v1/me/tos",
+        headers=auth(body["access_token"]),
+        json={"tos_version": "2026-09-04"},
+    )
+    assert later.status_code == 200, later.text
+    assert later.json()["tos_version"] == "2026-09-04"
+
+
 def test_login_wrong_password(client: TestClient) -> None:
     register(client)
     response = client.post(

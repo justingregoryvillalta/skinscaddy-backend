@@ -131,6 +131,8 @@ def register(
             last_name=body.last_name,
             email=body.email,
             postal_code=body.postal_code,
+            accept_tos=bool(body.accept_tos),
+            tos_version=body.tos_version,
         )
     except UsernameTakenError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

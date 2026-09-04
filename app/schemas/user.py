@@ -22,6 +22,8 @@ class UserPublic(BaseModel):
     signup_complete: bool = False
     play_intent: str | None = None
     starting_tokens: int | None = None
+    tos_version: str | None = None
+    tos_accepted_at: datetime | None = None
     created_at: datetime
 
     @model_validator(mode="before")
@@ -40,6 +42,8 @@ class UserPublic(BaseModel):
                 "postal_code": getattr(data, "postal_code", None),
                 "token_balance": getattr(data, "token_balance", 0),
                 "is_verified": getattr(data, "is_verified", True),
+                "tos_version": getattr(data, "tos_version", None),
+                "tos_accepted_at": getattr(data, "tos_accepted_at", None),
                 "created_at": getattr(data, "created_at", None),
             }
             profile = parse_profile(getattr(data, "signup_profile", None))
@@ -48,6 +52,18 @@ class UserPublic(BaseModel):
             payload["play_intent"] = profile.get("play_intent")
             payload["starting_tokens"] = profile.get("starting_tokens")
         return payload
+
+
+class AcceptTosRequest(BaseModel):
+    tos_version: str = Field(min_length=8, max_length=16)
+
+    @field_validator("tos_version")
+    @classmethod
+    def strip_version(cls, value: str) -> str:
+        version = (value or "").strip()
+        if not version:
+            raise ValueError("tos_version is required.")
+        return version
 
 
 class SignupProfileRequest(BaseModel):

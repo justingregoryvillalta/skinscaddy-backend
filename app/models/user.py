@@ -81,6 +81,11 @@ class User(Base):
         server_default=func.now(),
         nullable=False,
     )
+    tos_version: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    tos_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
 
 Index("uq_users_username_lower", func.lower(User.username), unique=True)

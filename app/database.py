@@ -61,6 +61,7 @@ def _ensure_user_columns() -> None:
         "last_name": "VARCHAR(50)",
         "email": "VARCHAR(254)",
         "postal_code": "VARCHAR(16)",
+        "tos_version": "VARCHAR(16)",
         "verification_token_hash": "VARCHAR(64)",
         "signup_profile": "TEXT",
     }
@@ -97,6 +98,8 @@ def _ensure_user_columns() -> None:
         statements.append("ALTER TABLE users ADD COLUMN honor_tags JSON")
     if "honor_updated_at" not in columns:
         statements.append("ALTER TABLE users ADD COLUMN honor_updated_at TIMESTAMP")
+    if "tos_accepted_at" not in columns:
+        statements.append("ALTER TABLE users ADD COLUMN tos_accepted_at TIMESTAMP")
     if not statements:
         _ensure_email_unique_index()
         return
