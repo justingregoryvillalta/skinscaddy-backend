@@ -21,6 +21,7 @@ from app.services.scrambles import (
     ScrambleNotFoundError,
     ScrambleStateError,
     create_scramble,
+    delete_scramble,
     get_scramble_by_code,
     get_visible_scramble,
     join_scramble,
@@ -89,7 +90,13 @@ def list_mine(
     db: Annotated[Session, Depends(get_db)],
 ) -> ScrambleListResponse:
     rows = list_my_scrambles(db, current_user)
-    return ScrambleListResponse(scrambles=[_state(row, current_user) for row in rows])
+    states: list[ScrambleStatePublic] = []
+    for row in rows:
+        try:
+            states.append(_state(row, current_user))
+        except Exception:
+            continue
+    return ScrambleListResponse(scrambles=states)
 
 
 @router.get("/by-code/{code}")
@@ -105,6 +112,18 @@ def get_by_code(
     if current_user.id in member_ids:
         return _state(scramble, current_user)
     return ScramblePreviewPublic.model_validate(preview_state(scramble))
+
+
+@router.delete("/{scramble_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+def delete_one(
+    scramble_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    try:
+        delete_scramble(db, current_user, scramble_id)
+    except (ScrambleNotFoundError, ScrambleForbiddenError) as exc:
+        raise _http_error(exc) from exc
 
 
 @router.get("/{scramble_id}", response_model=ScrambleStatePublic)

@@ -198,7 +198,6 @@ def test_list_my_scrambles(client: TestClient) -> None:
     assert len(bob_list.json()["scrambles"]) == 1
     assert bob_list.json()["scrambles"][0]["join_code"] == created["join_code"]
 
-
 def test_list_scrambles_empty_is_200_array(client: TestClient) -> None:
     bob = register(client, "nobody")
     empty = client.get("/api/v1/scrambles", headers=auth(bob["access_token"]))
@@ -219,3 +218,37 @@ def test_list_my_scrambles_sql_avoids_distinct_on_json() -> None:
         )
     ).upper()
     assert "DISTINCT" not in sql
+
+
+def test_host_can_delete_scramble_member_cannot(client: TestClient) -> None:
+    alice = register(client, "alice")
+    bob = register(client, "bob")
+    created = tee_off(client, alice["access_token"]).json()
+    sid = created["id"]
+    client.post(
+        "/api/v1/scrambles/join",
+        headers=auth(bob["access_token"]),
+        json={"code": created["join_code"], "team_index": 1},
+    )
+
+    denied = client.delete(
+        f"/api/v1/scrambles/{sid}",
+        headers=auth(bob["access_token"]),
+    )
+    assert denied.status_code == 403
+
+    still = client.get(f"/api/v1/scrambles/{sid}", headers=auth(alice["access_token"]))
+    assert still.status_code == 200
+
+    gone = client.delete(
+        f"/api/v1/scrambles/{sid}",
+        headers=auth(alice["access_token"]),
+    )
+    assert gone.status_code == 204, gone.text
+    missing = client.get(f"/api/v1/scrambles/{sid}", headers=auth(alice["access_token"]))
+    assert missing.status_code == 404
+    listed = client.get("/api/v1/scrambles", headers=auth(alice["access_token"]))
+    assert listed.json()["scrambles"] == []
+    bob_list = client.get("/api/v1/scrambles", headers=auth(bob["access_token"]))
+    assert bob_list.json()["scrambles"] == []
+

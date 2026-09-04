@@ -4,7 +4,7 @@ import secrets
 import string
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -323,6 +323,27 @@ def get_visible_scramble(db: Session, actor: User, scramble_id: int) -> Scramble
     return scramble
 
 
+def delete_scramble(db: Session, actor: User, scramble_id: int) -> None:
+    """Host-only hard delete. No wallet movement — skins were never locked chips."""
+    scramble = _require(db, scramble_id)
+    if int(scramble.host_id) != int(actor.id):
+        raise ScrambleForbiddenError("Only the host can delete this scramble.")
+    sid = int(scramble.id)
+    tables: set[str] = set()
+    try:
+        bind = db.get_bind()
+        if bind is not None:
+            tables = set(inspect(bind).get_table_names())
+    except Exception:
+        tables = set()
+    for table in ("scramble_hole_scores", "scramble_members", "scramble_teams"):
+        if tables and table not in tables:
+            continue
+        db.execute(text(f"DELETE FROM {table} WHERE scramble_id = :sid"), {"sid": sid})
+    db.execute(text("DELETE FROM scramble_rounds WHERE id = :sid"), {"sid": sid})
+    db.commit()
+
+
 def _all_done(scramble: ScrambleRound) -> bool:
     for team in scramble.teams:
         if _holes_played(scramble, team) < scramble.num_holes:
@@ -438,7 +459,15 @@ def viewer_state(scramble: ScrambleRound, actor: User | None) -> dict:
                 card.append(None)
         members = [
             m.user
-            for m in sorted(team.members, key=lambda item: item.joined_at)
+            for m in sorted(
+                team.members,
+                key=lambda item: (
+                    item.joined_at.replace(tzinfo=timezone.utc)
+                    if item.joined_at is not None and item.joined_at.tzinfo is None
+                    else item.joined_at
+                    or datetime.min.replace(tzinfo=timezone.utc)
+                ),
+            )
             if m.user is not None
         ]
         team_views.append(
@@ -465,7 +494,7 @@ def viewer_state(scramble: ScrambleRound, actor: User | None) -> dict:
         "id": scramble.id,
         "join_code": scramble.join_code,
         "deep_link": deep_link(scramble.join_code),
-        "status": scramble.status,
+        "status": (scramble.status.value if hasattr(scramble.status, "value") else scramble.status),
         "course_name": scramble.course_name,
         "course_id": scramble.course_id,
         "num_holes": scramble.num_holes,
@@ -489,7 +518,7 @@ def preview_state(scramble: ScrambleRound) -> dict:
     return {
         "join_code": scramble.join_code,
         "deep_link": deep_link(scramble.join_code),
-        "status": scramble.status,
+        "status": (scramble.status.value if hasattr(scramble.status, "value") else scramble.status),
         "course_name": scramble.course_name,
         "num_holes": scramble.num_holes,
         "wager_amount": scramble.wager_amount,
