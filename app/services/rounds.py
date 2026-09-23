@@ -42,6 +42,12 @@ def create_round(
     db.commit()
     db.refresh(record)
     try:
+        from app.services.honor_settle import settle_solo_round
+
+        settle_solo_round(db, actor, record)
+    except Exception:
+        db.rollback()
+    try:
         from app.services.honor import recompute_and_save
 
         recompute_and_save(db, actor)

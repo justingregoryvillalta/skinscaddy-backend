@@ -143,6 +143,24 @@ def _ensure_email_unique_index() -> None:
         pass
 
 
+def _ensure_honor_ledger_index() -> None:
+    """One honor credit per round. Existing databases do not pick up new indexes."""
+    try:
+        inspector = inspect(engine)
+        if "token_ledger" not in inspector.get_table_names():
+            return
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_token_ledger_honor_ref "
+                    "ON token_ledger (reference) "
+                    "WHERE reference LIKE 'honor:round:%'"
+                )
+            )
+    except Exception:
+        pass
+
+
 def init_db(*, retries: int = 8) -> None:
     # Import models so metadata is populated before create_all.
     from app import models  # noqa: F401
@@ -154,6 +172,13 @@ def init_db(*, retries: int = 8) -> None:
             Base.metadata.create_all(bind=engine)
             _ensure_user_columns()
             _ensure_chat_tables()
+            _ensure_honor_ledger_index()
+            try:
+                from app.services.honor_settle import backfill_bay_hill_honor
+
+                backfill_bay_hill_honor()
+            except Exception as exc:
+                print(f"honor backfill skipped: {exc}", flush=True)
             print(f"database ready ({engine.dialect.name})", flush=True)
             return
         except Exception as exc:
