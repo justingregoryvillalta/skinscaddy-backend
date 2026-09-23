@@ -144,17 +144,22 @@ def _ensure_email_unique_index() -> None:
 
 
 def _ensure_honor_ledger_index() -> None:
-    """One honor credit per round. Existing databases do not pick up new indexes."""
+    """One honor credit per round. A reversal debit may reuse honor:round:{id}.
+
+    Older databases created this index on every honor reference, which blocks
+    the debit. Drop and recreate so only credits stay unique.
+    """
     try:
         inspector = inspect(engine)
         if "token_ledger" not in inspector.get_table_names():
             return
         with engine.begin() as conn:
+            conn.execute(text("DROP INDEX IF EXISTS uq_token_ledger_honor_ref"))
             conn.execute(
                 text(
                     "CREATE UNIQUE INDEX IF NOT EXISTS uq_token_ledger_honor_ref "
                     "ON token_ledger (reference) "
-                    "WHERE reference LIKE 'honor:round:%'"
+                    "WHERE reference LIKE 'honor:round:%' AND direction = 'credit'"
                 )
             )
     except Exception:

@@ -11,9 +11,11 @@ from app.models.round import Round
 from app.models.user import User
 from app.schemas.round import CreateRoundRequest, RoundListResponse, RoundPublic
 from app.services.rounds import (
+    RoundConflictError,
     RoundForbiddenError,
     RoundNotFoundError,
     create_round,
+    delete_round,
     get_round,
     list_rounds,
 )
@@ -47,6 +49,22 @@ def get_rounds(
     return RoundListResponse(
         rounds=[RoundPublic.model_validate(row) for row in list_rounds(db, current_user)]
     )
+
+
+@router.delete("/{round_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+def delete_one_round(
+    round_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    try:
+        delete_round(db, current_user, round_id)
+    except RoundNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except RoundForbiddenError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RoundConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.get("/{round_id}", response_model=RoundPublic)

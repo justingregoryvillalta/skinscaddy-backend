@@ -102,6 +102,39 @@ def _existing_credit(db: Session, user_id: int, round_id: int) -> TokenLedger | 
     )
 
 
+def reverse_solo_honor(db: Session, user: User, round_id: int) -> TokenLedger | None:
+    """Take back Honor credited for this card. Nothing is owed when it was unpaid."""
+    ref = honor_reference(round_id)
+    rows = list(
+        db.scalars(
+            select(TokenLedger).where(
+                TokenLedger.user_id == user.id,
+                TokenLedger.reference == ref,
+            )
+        ).all()
+    )
+    credited = sum(
+        int(row.amount) for row in rows if row.direction == TokenDirection.CREDIT
+    )
+    debited = sum(
+        int(row.amount) for row in rows if row.direction == TokenDirection.DEBIT
+    )
+    remaining = credited - debited
+    if remaining <= 0:
+        return None
+    from app.services.wallet import debit_tokens
+
+    return debit_tokens(
+        db,
+        user,
+        amount=remaining,
+        source=TokenSource.ADJUSTMENT,
+        reason="Solo honor reversed",
+        reference=ref,
+        commit=False,
+    )
+
+
 def settle_solo_round(db: Session, user: User, record: Round) -> TokenLedger | None:
     """Credit honor for one completed 18-hole solo card. Repeat calls pay nothing."""
     if record.id is None or int(record.user_id) != int(user.id):

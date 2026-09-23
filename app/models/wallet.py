@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -77,6 +78,18 @@ class TokenLedger(Base):
         CheckConstraint("amount > 0", name="ck_token_ledger_amount_positive"),
         Index("ix_token_ledger_user_created", "user_id", "created_at"),
         Index("ix_token_ledger_user_id", "user_id", "id"),
+        # One honor credit per round. A reversal debit may reuse the same reference.
+        Index(
+            "uq_token_ledger_honor_ref",
+            "reference",
+            unique=True,
+            sqlite_where=text(
+                "reference LIKE 'honor:round:%' AND direction = 'credit'"
+            ),
+            postgresql_where=text(
+                "reference LIKE 'honor:round:%' AND direction = 'credit'"
+            ),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
