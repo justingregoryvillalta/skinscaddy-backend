@@ -1,8 +1,9 @@
 """Solo-card honor credits from the stored card.
 
-Finish is +10. Each hole is par +1, birdie +2, eagle or better +3,
-bogey or worse 0. A 9-hole or abandoned card pays 0. The same round
-is credited once. This uses scores and pars already on the card.
+A posted 18 pays +10. A posted 9 pays +5. Each posted hole is par +1,
+birdie +2, eagle or better +3, bogey or worse 0. Ending mid-round pays
+no completion bonus. The same card is credited once. This uses scores
+and pars already on the card.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from app.models.user import User
 from app.models.wallet import TokenDirection, TokenLedger, TokenSource
 
 FINISH_18 = 10
+FINISH_9 = 5
 _EASTERN = ZoneInfo("America/New_York")
 _BAY_HILL = "bay hill club lodge championship course"
 _BACKFILL_YEAR = 2026
@@ -67,25 +69,32 @@ def hole_honor(score: object, par: object) -> int:
     return 0
 
 
-def is_completed_18(record: Round) -> bool:
-    if int(getattr(record, "num_holes", 0) or 0) != 18:
-        return False
+def posted_hole_count(record: Round) -> int | None:
+    """9 or 18 when every declared hole has a score. Mid-round cards are None."""
+    holes = int(getattr(record, "num_holes", 0) or 0)
+    if holes not in (9, 18):
+        return None
     scores = list(record.scores or [])
-    if len(scores) != 18:
-        return False
+    if len(scores) != holes:
+        return None
     for score in scores:
         score_n = _whole_number(score)
         if score_n is None or score_n < 1:
-            return False
-    return True
+            return None
+    return holes
+
+
+def is_completed_18(record: Round) -> bool:
+    return posted_hole_count(record) == 18
 
 
 def solo_honor_amount(record: Round) -> int:
-    if not is_completed_18(record):
+    holes = posted_hole_count(record)
+    if holes is None:
         return 0
-    amount = FINISH_18
+    amount = FINISH_18 if holes == 18 else FINISH_9
     pars = list(record.pars or [])
-    if len(pars) != 18:
+    if len(pars) != holes:
         return amount
     for score, par in zip(list(record.scores or []), pars):
         amount += hole_honor(score, par)
@@ -136,7 +145,7 @@ def reverse_solo_honor(db: Session, user: User, round_id: int) -> TokenLedger | 
 
 
 def settle_solo_round(db: Session, user: User, record: Round) -> TokenLedger | None:
-    """Credit honor for one completed 18-hole solo card. Repeat calls pay nothing."""
+    """Credit honor for one posted solo card. Repeat calls pay nothing."""
     if record.id is None or int(record.user_id) != int(user.id):
         return None
     existing = _existing_credit(db, user.id, record.id)
@@ -147,12 +156,17 @@ def settle_solo_round(db: Session, user: User, record: Round) -> TokenLedger | N
         return None
     from app.services.wallet import credit_tokens
 
+    source = (
+        TokenSource.ROUND_COMPLETE_9
+        if posted_hole_count(record) == 9
+        else TokenSource.ROUND_COMPLETE_18
+    )
     try:
         return credit_tokens(
             db,
             user,
             amount=amount,
-            source=TokenSource.ROUND_COMPLETE_18,
+            source=source,
             reason="Solo honor",
             reference=honor_reference(record.id),
         )

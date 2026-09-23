@@ -140,7 +140,7 @@ def test_create_accept_and_complete_pays_winner(client: TestClient) -> None:
     assert accepted.json()["status"] == "active"
     assert accepted.json()["pot_amount"] == 20
 
-    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 140
+    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 145
     assert client.get("/api/v1/wallet", headers=auth(bob["access_token"])).json()["balance"] == 140
 
     scores = client.post(
@@ -157,7 +157,7 @@ def test_create_accept_and_complete_pays_winner(client: TestClient) -> None:
     assert bob["user"]["id"] in winner_ids
 
     assert client.get("/api/v1/wallet", headers=auth(bob["access_token"])).json()["balance"] == 160
-    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 140
+    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 145
 
 
 def test_decline_then_all_declined_expires(client: TestClient) -> None:
@@ -175,7 +175,7 @@ def test_decline_then_all_declined_expires(client: TestClient) -> None:
     )
     assert declined.status_code == 200
     assert declined.json()["status"] == "expired"
-    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 120
+    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 125
 
 
 def test_only_invitee_can_accept(client: TestClient) -> None:
@@ -250,7 +250,7 @@ def test_forfeit_on_deadline_pays_finishers(
     assert body["status"] == "forfeited"
     assert body["result"]["kind"] == "forfeited"
     assert alice["user"]["id"] in body["result"]["winner_ids"]
-    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 140
+    assert client.get("/api/v1/wallet", headers=auth(alice["access_token"])).json()["balance"] == 145
     assert client.get("/api/v1/wallet", headers=auth(bob["access_token"])).json()["balance"] == 120
 
 

@@ -66,20 +66,40 @@ def test_eighteen_pays_finish_and_hole_honor_once(client: TestClient, db_session
     assert wallet.json()["balance"] == 131
 
 
-def test_nine_and_abandoned_pay_nothing(client: TestClient, db_session) -> None:
+def test_nine_pays_finish_and_hole_honor_once(client: TestClient, db_session) -> None:
     user = register(client, "nine")
+    # 7 pars, birdie, eagle on par 4. Finish 5 + 7 + 2 + 3 = 17.
     created = _post_round(
         client,
         user["access_token"],
         holes=9,
-        scores=[4] * 9,
+        scores=[4] * 7 + [3, 2],
         pars=[4] * 9,
         course="Local Nine",
     )
     assert created.status_code == 201, created.text
     wallet = client.get("/api/v1/wallet", headers=auth(user["access_token"]))
-    assert wallet.json()["balance"] == 100
+    assert wallet.json()["balance"] == 117
 
+    record = db_session.get(Round, created.json()["id"])
+    owner = db_session.get(User, user["user"]["id"])
+    assert record is not None and owner is not None
+    again = settle_solo_round(db_session, owner, record)
+    assert again is not None
+    db_session.expire_all()
+    credits = (
+        db_session.query(TokenLedger)
+        .filter(TokenLedger.reference == f"honor:round:{record.id}")
+        .all()
+    )
+    assert len(credits) == 1
+    assert credits[0].amount == 17
+    wallet = client.get("/api/v1/wallet", headers=auth(user["access_token"]))
+    assert wallet.json()["balance"] == 117
+
+
+def test_abandoned_mid_round_pays_nothing(client: TestClient, db_session) -> None:
+    user = register(client, "walkoff")
     owner = db_session.get(User, user["user"]["id"])
     assert owner is not None
     abandoned = Round(
